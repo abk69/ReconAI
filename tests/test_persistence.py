@@ -432,6 +432,7 @@ def test_alembic_migration_creates_schema(migrated_engine: Engine) -> None:
         "invoices",
         "invoice_lines",
         "reconciliation_exceptions",
+        "documents",
         "alembic_version",
     }
     tables = set(inspect(migrated_engine).get_table_names())

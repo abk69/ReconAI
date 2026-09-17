@@ -41,6 +41,17 @@ class Settings(BaseSettings):
         description="Allowed tax-rate variance as a percentage (default 0%)",
     )
 
+    # Document intake (M3)
+    storage_root: str = Field(
+        default="storage/documents",
+        description="Local filesystem root for uploaded document binaries",
+    )
+    max_upload_bytes: int = Field(
+        default=10 * 1024 * 1024,
+        description="Maximum upload size in bytes (default 10 MB)",
+        ge=1,
+    )
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -9,6 +9,25 @@ class DocumentType(StrEnum):
     PO = "PO"
     GRN = "GRN"
     INVOICE = "INVOICE"
+    UNKNOWN = "UNKNOWN"
+
+
+class DocumentStatus(StrEnum):
+    """Lifecycle status for an ingested file document.
+
+    M3 performs intake only. A successfully validated upload becomes
+    ``VALIDATED``. Extraction states are reserved for M4+.
+    """
+
+    UPLOADED = "UPLOADED"
+    VALIDATED = "VALIDATED"
+    EXTRACTION_PENDING = "EXTRACTION_PENDING"
+    EXTRACTING = "EXTRACTING"
+    EXTRACTED = "EXTRACTED"
+    NORMALIZED = "NORMALIZED"
+    READY_FOR_RECONCILIATION = "READY_FOR_RECONCILIATION"
+    EXTRACTION_FAILED = "EXTRACTION_FAILED"
+    VALIDATION_FAILED = "VALIDATION_FAILED"
 
 
 class ExceptionType(StrEnum):

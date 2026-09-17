@@ -2,7 +2,15 @@
 
 from fastapi import FastAPI
 
-from app.api.routes import health, reconciliation
+from app.api.routes import (
+    documents,
+    goods_receipts,
+    health,
+    invoices,
+    purchase_orders,
+    reconciliation,
+    vendors,
+)
 from app.core.config import get_settings
 
 
@@ -18,8 +26,14 @@ def create_app() -> FastAPI:
         version="0.1.0",
         debug=settings.debug,
     )
-    application.include_router(health.router, prefix=settings.api_prefix)
-    application.include_router(reconciliation.router, prefix=settings.api_prefix)
+    prefix = settings.api_prefix
+    application.include_router(health.router, prefix=prefix)
+    application.include_router(reconciliation.router, prefix=prefix)
+    application.include_router(documents.router, prefix=prefix)
+    application.include_router(vendors.router, prefix=prefix)
+    application.include_router(purchase_orders.router, prefix=prefix)
+    application.include_router(goods_receipts.router, prefix=prefix)
+    application.include_router(invoices.router, prefix=prefix)
     return application
 
 

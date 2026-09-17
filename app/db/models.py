@@ -31,6 +31,8 @@ from sqlalchemy.types import JSON
 
 from app.db.base import Base
 from app.domain.enums import (
+    DocumentStatus,
+    DocumentType,
     ExceptionSeverity,
     ExceptionStatus,
     ExceptionType,
@@ -384,6 +386,77 @@ class ReconciliationException(Base):
     invoice: Mapped[Invoice | None] = relationship()
 
 
+class Document(Base):
+    """Uploaded file metadata. Binary content lives on the filesystem."""
+
+    __tablename__ = "documents"
+    __table_args__ = (
+        Index("ix_documents_sha256", "sha256"),
+        Index("ix_documents_document_type", "document_type"),
+        Index("ix_documents_status", "status"),
+        UniqueConstraint("sha256", name="uq_documents_sha256"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    original_filename: Mapped[str] = mapped_column(String(512), nullable=False)
+    stored_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    document_type: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=DocumentType.UNKNOWN.value,
+    )
+    mime_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    file_extension: Mapped[str] = mapped_column(String(16), nullable=False)
+    file_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    storage_path: Mapped[str] = mapped_column(String(1024), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        default=DocumentStatus.VALIDATED.value,
+    )
+    vendor_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("vendors.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    purchase_order_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("purchase_orders.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    goods_receipt_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("goods_receipts.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    invoice_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("invoices.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    vendor: Mapped[Vendor | None] = relationship()
+    purchase_order: Mapped[PurchaseOrder | None] = relationship()
+    goods_receipt: Mapped[GoodsReceipt | None] = relationship()
+    invoice: Mapped[Invoice | None] = relationship()
+
+
 # Re-export enum names for callers that want ORM + domain enums together.
 __all__ = [
     "Vendor",
@@ -394,6 +467,9 @@ __all__ = [
     "Invoice",
     "InvoiceLine",
     "ReconciliationException",
+    "Document",
+    "DocumentStatus",
+    "DocumentType",
     "ExceptionSeverity",
     "ExceptionStatus",
     "ExceptionType",

@@ -43,10 +43,12 @@ def test_document_type_values() -> None:
         DocumentType.PO,
         DocumentType.GRN,
         DocumentType.INVOICE,
+        DocumentType.UNKNOWN,
     }
     assert DocumentType.PO.value == "PO"
     assert DocumentType.GRN.value == "GRN"
     assert DocumentType.INVOICE.value == "INVOICE"
+    assert DocumentType.UNKNOWN.value == "UNKNOWN"
 
 
 def test_exception_type_values() -> None:

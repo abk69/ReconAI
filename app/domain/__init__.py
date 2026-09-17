@@ -1,6 +1,7 @@
 """Domain enums and procurement document models."""
 
 from app.domain.enums import (
+    DocumentStatus,
     DocumentType,
     ExceptionSeverity,
     ExceptionStatus,
@@ -22,6 +23,7 @@ from app.domain.models import (
 )
 
 __all__ = [
+    "DocumentStatus",
     "DocumentType",
     "ExceptionSeverity",
     "ExceptionStatus",
