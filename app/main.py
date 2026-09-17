@@ -2,7 +2,7 @@
 
 from fastapi import FastAPI
 
-from app.api.routes import health
+from app.api.routes import health, reconciliation
 from app.core.config import get_settings
 
 
@@ -19,6 +19,7 @@ def create_app() -> FastAPI:
         debug=settings.debug,
     )
     application.include_router(health.router, prefix=settings.api_prefix)
+    application.include_router(reconciliation.router, prefix=settings.api_prefix)
     return application
 
 

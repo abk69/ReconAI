@@ -27,6 +27,20 @@ class Settings(BaseSettings):
         description="SQLAlchemy database URL (PostgreSQL in production/local)",
     )
 
+    # Reconciliation tolerances (Decimal-compatible strings in env).
+    quantity_tolerance: str = Field(
+        default="0",
+        description="Absolute quantity tolerance (default 0)",
+    )
+    price_tolerance_percent: str = Field(
+        default="0",
+        description="Allowed unit-price variance as a percentage (default 0%)",
+    )
+    tax_rate_tolerance_percent: str = Field(
+        default="0",
+        description="Allowed tax-rate variance as a percentage (default 0%)",
+    )
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -18,14 +18,7 @@ ReconAI aims to ingest these documents, reconcile them deterministically, surfac
 
 **The deterministic reconciliation engine establishes financial facts.**
 
-The LLM / AI layer must **not** determine ground truth. AI will assist with:
-
-- Explaining exceptions
-- Retrieving relevant company policies (RAG)
-- Prioritizing work
-- Suggesting resolution actions
-
-Humans remain in the approval loop. Every decision and action will be auditable.
+The LLM / AI layer must **not** determine ground truth. AI will assist later with explanation, policy retrieval (RAG), prioritization, and resolution suggestions. Humans remain in the approval loop.
 
 ## Current scope
 
@@ -33,71 +26,50 @@ Completed milestones:
 
 - **M0** — FastAPI foundation, domain enums/Pydantic models, health endpoint, tooling
 - **M1** — SQLAlchemy persistence layer, Alembic migrations, relational procurement schema
+- **M2** — Deterministic PO ↔ GRN ↔ Invoice reconciliation engine, service, and API
 
-Not yet implemented: reconciliation engine, OCR, LLM/RAG/agents, auth, frontend, cloud deployment.
+Not yet implemented: OCR, LLM/RAG/agents, auth, frontend, cloud deployment.
 
 ## Current architecture
 
 ```
 reconai/
 ├── app/
-│   ├── main.py              # FastAPI app factory and entrypoint
-│   ├── core/config.py       # Settings from environment variables
-│   ├── api/routes/          # Thin HTTP adapters (no business logic)
-│   ├── domain/              # Enums and Pydantic domain models
-│   ├── db/                  # SQLAlchemy Base, session, ORM models
-│   ├── schemas/             # API response schemas
-│   ├── services/            # Business logic (future)
-│   └── repositories/        # Persistence helpers (future)
-├── alembic/                 # Database migrations
+│   ├── main.py
+│   ├── core/config.py
+│   ├── api/routes/          # Thin HTTP adapters
+│   ├── domain/              # Enums + Pydantic DTOs
+│   ├── db/                  # SQLAlchemy ORM
+│   ├── reconciliation/      # Pure deterministic engine (no FastAPI)
+│   ├── schemas/             # API DTOs
+│   ├── services/            # Load data → engine → persist
+│   └── repositories/
+├── alembic/
 ├── tests/
-├── docker-compose.yml       # Local PostgreSQL
-├── alembic.ini
-├── pyproject.toml
-└── requirements.txt
+└── docker-compose.yml
 ```
 
 | Layer | Responsibility |
 | --- | --- |
-| `api/` | HTTP routing and response shapes only |
-| `domain/` | Shared enums and Pydantic models |
-| `db/` | SQLAlchemy ORM models, engine, sessions |
-| `schemas/` | API DTOs |
-| `services/` | Reserved for reconciliation and workflows |
-| `repositories/` | Reserved for query/command helpers |
+| `reconciliation/` | Pure rules + engine; FastAPI-independent |
+| `services/` | Load ORM data, invoke engine, upsert exceptions |
+| `api/` | HTTP validation and response mapping only |
+| `db/` | Persistence models and sessions |
 
-### Database architecture (M1)
+### Reconciliation (M2)
 
-PostgreSQL is the target database. ORM models live in `app/db/models.py`:
+`POST /reconciliation/run` accepts PO and/or invoice IDs, runs deterministic matching, and persists exceptions idempotently via a unique `fingerprint`.
 
-| Table | Role |
-| --- | --- |
-| `vendors` | Supplier master data (indexed `tax_id`) |
-| `purchase_orders` / `purchase_order_lines` | Ordered quantities and prices |
-| `goods_receipts` / `goods_receipt_lines` | Received quantities linked to PO lines |
-| `invoices` / `invoice_lines` | Billed amounts linked to vendor / optional PO |
-| `reconciliation_exceptions` | Detected exceptions with FK source docs + JSON evidence |
-
-Design notes:
-
-- UUID primary keys
-- `Numeric` for all monetary and quantity columns (never float)
-- Timezone-aware timestamps
-- Unique business identifiers: `po_number`, `grn_number`, `invoice_number`, `vendors.tax_id`
-- Exception `evidence` and `source_document_ids` stored as JSONB on PostgreSQL (JSON variant for isolated SQLite tests)
-
-Pydantic models in `app/domain/models.py` remain API/domain DTOs; ORM models are the persistence source of truth for M1+.
+Rules covered: quantity (multi-GRN aggregation, partial delivery safe), price, tax rate, identifiers, missing documents, duplicate invoice identity, impossible chronology.
 
 ## Intentionally not implemented yet
 
-- Deterministic reconciliation engine
 - OCR / document ingestion pipelines
 - LLM, RAG, or agent functionality
 - Authentication / authorization
 - Frontend
 - Payments
 - Cloud deployment
-- Repository service layer wiring into API routes
 
 ## Local setup
 
@@ -118,30 +90,21 @@ cp .env.example .env
 
 ### Local PostgreSQL
 
-Production and local app runtime use PostgreSQL. The included Compose file matches `.env.example`:
-
 ```bash
 docker compose up -d
 alembic upgrade head
 ```
 
-`DATABASE_URL` default:
-
-`postgresql+psycopg://reconai:reconai@localhost:5432/reconai`
-
-Override via environment or `.env`. Do not hardcode production credentials.
-
-Run the API:
+`DATABASE_URL` default: `postgresql+psycopg://reconai:reconai@localhost:5432/reconai`
 
 ```bash
 uvicorn app.main:app --reload
 ```
 
-Then open [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health) or docs at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs).
+- Health: [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health)
+- Docs: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 
 ## Tests
-
-ORM and Alembic tests use an **isolated SQLite database** so they never require your developer/production PostgreSQL. Production schema behavior remains PostgreSQL-first (JSONB via dialect variants).
 
 ```bash
 pytest
@@ -159,5 +122,4 @@ ruff format --check .
 ```bash
 alembic upgrade head
 alembic downgrade -1
-alembic revision --autogenerate -m "describe change"
 ```

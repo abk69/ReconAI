@@ -8,6 +8,7 @@ from app.domain.enums import (
     GoodsReceiptStatus,
     InvoiceStatus,
     PurchaseOrderStatus,
+    ReconciliationStatus,
 )
 from app.domain.models import (
     GoodsReceipt,
@@ -35,5 +36,6 @@ __all__ = [
     "PurchaseOrderLine",
     "PurchaseOrderStatus",
     "ReconciliationException",
+    "ReconciliationStatus",
     "Vendor",
 ]

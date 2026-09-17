@@ -370,6 +370,8 @@ class ReconciliationException(Base):
         nullable=False,
         default=dict,
     )
+    # Stable identity for idempotent upserts across re-runs of the same facts.
+    fingerprint: Mapped[str | None] = mapped_column(String(128), nullable=True, unique=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

@@ -70,3 +70,11 @@ class ExceptionStatus(StrEnum):
     IN_REVIEW = "IN_REVIEW"
     RESOLVED = "RESOLVED"
     DISMISSED = "DISMISSED"
+
+
+class ReconciliationStatus(StrEnum):
+    """Outcome of a deterministic reconciliation run."""
+
+    MATCHED = "MATCHED"
+    EXCEPTIONS_FOUND = "EXCEPTIONS_FOUND"
+    INCOMPLETE = "INCOMPLETE"

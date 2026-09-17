@@ -19,6 +19,7 @@ from alembic.config import Config
 from sqlalchemy import create_engine, event, inspect
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from app.db import models as _models  # noqa: F401 — register mappers
 from app.db.base import Base
@@ -34,8 +35,9 @@ def _enable_sqlite_foreign_keys(dbapi_connection: object, _connection_record: ob
 def sqlite_engine() -> Generator[Engine, None, None]:
     """Yield an isolated in-memory SQLite engine with FKs enabled."""
     engine = create_engine(
-        "sqlite:///:memory:",
+        "sqlite://",
         connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
     )
     event.listen(engine, "connect", _enable_sqlite_foreign_keys)
     Base.metadata.create_all(engine)
