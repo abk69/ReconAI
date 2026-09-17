@@ -11,12 +11,17 @@ from app.core.config import get_settings
 from app.db.session import get_db
 from app.domain.enums import DocumentStatus, DocumentType
 from app.schemas.documents import DocumentListResponse, DocumentResponse, DocumentUpdateRequest
+from app.schemas.understanding import UnderstandingResponse
 from app.services.document_service import (
     DocumentAssociationError,
     DocumentNotFoundError,
     DocumentService,
     DocumentServiceError,
     DocumentValidationError,
+)
+from app.services.document_understanding_service import (
+    DocumentUnderstandingNotFoundError,
+    DocumentUnderstandingService,
 )
 from app.storage.local import LocalFileStorage
 
@@ -160,3 +165,49 @@ def update_document(
     except DocumentAssociationError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return _to_response(row)
+
+
+@router.post("/{document_id}/understand", response_model=UnderstandingResponse)
+def understand_document(document_id: UUID, session: DbSession) -> UnderstandingResponse:
+    """Run deterministic document understanding (M4). Does not call LLMs."""
+    settings = get_settings()
+    service = DocumentUnderstandingService(session, storage=LocalFileStorage(settings.storage_root))
+    try:
+        result = service.understand(document_id)
+    except DocumentUnderstandingNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return UnderstandingResponse(
+        document_id=result.document_id,
+        detected_type=result.detected_type,
+        outcome=result.outcome,
+        document_status=result.document_status,
+        message=result.message,
+        candidate=result.candidate,
+        validation=result.validation,
+        evidence=result.evidence,
+        extractor_version=result.extractor_version,
+        has_raw_extraction=bool(result.raw_extraction),
+    )
+
+
+@router.get("/{document_id}/understanding", response_model=UnderstandingResponse)
+def get_document_understanding(document_id: UUID, session: DbSession) -> UnderstandingResponse:
+    """Return the latest persisted understanding result for a document."""
+    settings = get_settings()
+    service = DocumentUnderstandingService(session, storage=LocalFileStorage(settings.storage_root))
+    try:
+        result = service.get_understanding(document_id)
+    except DocumentUnderstandingNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return UnderstandingResponse(
+        document_id=result.document_id,
+        detected_type=result.detected_type,
+        outcome=result.outcome,
+        document_status=result.document_status,
+        message=result.message,
+        candidate=result.candidate,
+        validation=result.validation,
+        evidence=result.evidence,
+        extractor_version=result.extractor_version,
+        has_raw_extraction=bool(result.raw_extraction),
+    )

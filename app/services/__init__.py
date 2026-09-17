@@ -7,6 +7,11 @@ from app.services.document_service import (
     DocumentServiceError,
     DocumentValidationError,
 )
+from app.services.document_understanding_service import (
+    DocumentUnderstandingError,
+    DocumentUnderstandingNotFoundError,
+    DocumentUnderstandingService,
+)
 from app.services.procurement_service import (
     ProcurementNotFoundError,
     ProcurementService,
@@ -24,6 +29,9 @@ __all__ = [
     "DocumentNotFoundError",
     "DocumentService",
     "DocumentServiceError",
+    "DocumentUnderstandingError",
+    "DocumentUnderstandingNotFoundError",
+    "DocumentUnderstandingService",
     "DocumentValidationError",
     "ProcurementNotFoundError",
     "ProcurementService",

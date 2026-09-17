@@ -455,6 +455,61 @@ class Document(Base):
     purchase_order: Mapped[PurchaseOrder | None] = relationship()
     goods_receipt: Mapped[GoodsReceipt | None] = relationship()
     invoice: Mapped[Invoice | None] = relationship()
+    extraction_result: Mapped[DocumentExtractionResult | None] = relationship(
+        back_populates="document",
+        uselist=False,
+    )
+
+
+class DocumentExtractionResult(Base):
+    """Persisted M4 understanding output — not authoritative financial truth.
+
+    Structured candidates and evidence live in JSON so M4 can evolve without
+    writing unvalidated values into PO/GRN/Invoice tables.
+    """
+
+    __tablename__ = "document_extraction_results"
+    __table_args__ = (
+        UniqueConstraint("document_id", name="uq_document_extraction_results_document_id"),
+        Index("ix_document_extraction_results_outcome", "outcome"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("documents.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    detected_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(64), nullable=False)
+    extractor_version: Mapped[str] = mapped_column(String(32), nullable=False, default="m4-1.0")
+    raw_extraction: Mapped[dict[str, Any]] = mapped_column(
+        JsonDocument,
+        nullable=False,
+        default=dict,
+    )
+    candidate: Mapped[dict[str, Any] | None] = mapped_column(JsonDocument, nullable=True)
+    validation: Mapped[dict[str, Any]] = mapped_column(
+        JsonDocument,
+        nullable=False,
+        default=dict,
+    )
+    evidence: Mapped[list[Any]] = mapped_column(JsonDocument, nullable=False, default=list)
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    document: Mapped[Document] = relationship(back_populates="extraction_result")
 
 
 # Re-export enum names for callers that want ORM + domain enums together.
@@ -468,6 +523,7 @@ __all__ = [
     "InvoiceLine",
     "ReconciliationException",
     "Document",
+    "DocumentExtractionResult",
     "DocumentStatus",
     "DocumentType",
     "ExceptionSeverity",

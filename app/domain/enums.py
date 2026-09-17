@@ -16,7 +16,8 @@ class DocumentStatus(StrEnum):
     """Lifecycle status for an ingested file document.
 
     M3 performs intake only. A successfully validated upload becomes
-    ``VALIDATED``. Extraction states are reserved for M4+.
+    ``VALIDATED``. M4 advances extraction states; ambiguous results use
+    ``REVIEW_REQUIRED``.
     """
 
     UPLOADED = "UPLOADED"
@@ -28,6 +29,24 @@ class DocumentStatus(StrEnum):
     READY_FOR_RECONCILIATION = "READY_FOR_RECONCILIATION"
     EXTRACTION_FAILED = "EXTRACTION_FAILED"
     VALIDATION_FAILED = "VALIDATION_FAILED"
+    REVIEW_REQUIRED = "REVIEW_REQUIRED"
+
+
+class FieldConfidence(StrEnum):
+    """Deterministic, rule-based confidence for extracted fields (not ML)."""
+
+    HIGH = "HIGH"
+    MEDIUM = "MEDIUM"
+    LOW = "LOW"
+
+
+class ExtractionOutcome(StrEnum):
+    """Outcome of a document-understanding run (separate from DocumentStatus)."""
+
+    READY_FOR_RECONCILIATION = "READY_FOR_RECONCILIATION"
+    REVIEW_REQUIRED = "REVIEW_REQUIRED"
+    VALIDATION_FAILED = "VALIDATION_FAILED"
+    EXTRACTION_FAILED = "EXTRACTION_FAILED"
 
 
 class ExceptionType(StrEnum):
