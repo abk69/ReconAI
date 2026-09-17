@@ -17,7 +17,8 @@ class DocumentStatus(StrEnum):
 
     M3 performs intake only. A successfully validated upload becomes
     ``VALIDATED``. M4 advances extraction states; ambiguous results use
-    ``REVIEW_REQUIRED``.
+    ``REVIEW_REQUIRED``. M5 promotes approved candidates to
+    ``READY_FOR_RECONCILIATION`` or marks rejects as ``REVIEW_REJECTED``.
     """
 
     UPLOADED = "UPLOADED"
@@ -30,6 +31,7 @@ class DocumentStatus(StrEnum):
     EXTRACTION_FAILED = "EXTRACTION_FAILED"
     VALIDATION_FAILED = "VALIDATION_FAILED"
     REVIEW_REQUIRED = "REVIEW_REQUIRED"
+    REVIEW_REJECTED = "REVIEW_REJECTED"
 
 
 class FieldConfidence(StrEnum):
@@ -116,3 +118,29 @@ class ReconciliationStatus(StrEnum):
     MATCHED = "MATCHED"
     EXCEPTIONS_FOUND = "EXCEPTIONS_FOUND"
     INCOMPLETE = "INCOMPLETE"
+
+
+class ReviewStatus(StrEnum):
+    """Lifecycle status for a human review task (M5)."""
+
+    PENDING = "PENDING"
+    IN_REVIEW = "IN_REVIEW"
+    APPROVED = "APPROVED"
+    CORRECTED = "CORRECTED"
+    REJECTED = "REJECTED"
+
+
+class ReviewAction(StrEnum):
+    """Field-level or task-level reviewer action."""
+
+    APPROVE = "APPROVE"
+    CORRECT = "CORRECT"
+    REJECT = "REJECT"
+
+
+class ReviewPriority(StrEnum):
+    """Priority for review queue ordering."""
+
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"

@@ -15,6 +15,7 @@ from app.extraction.classifier import classify_document
 from app.extraction.schemas import ExtractionResultPayload, ValidationResult
 from app.extraction.structure import build_candidate
 from app.extraction.validator import validate_candidate
+from app.services.review_service import ReviewService
 from app.storage.base import StorageBackend, StorageError
 from app.storage.local import LocalFileStorage
 
@@ -217,6 +218,15 @@ class DocumentUnderstandingService:
         existing.validation = validation_payload
         existing.evidence = evidence_payload
         existing.message = message
+        self._session.flush()
+
+        # M5: auto-create a review task only when human intervention is required.
+        ReviewService(self._session).create_from_extraction_if_needed(
+            document=document,
+            extraction=existing,
+            outcome=outcome,
+            validation=validation_payload,
+        )
         self._session.commit()
 
         return ExtractionResultPayload(

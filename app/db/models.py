@@ -39,6 +39,9 @@ from app.domain.enums import (
     GoodsReceiptStatus,
     InvoiceStatus,
     PurchaseOrderStatus,
+    ReviewAction,
+    ReviewPriority,
+    ReviewStatus,
 )
 
 # PostgreSQL uses JSONB; SQLite tests use JSON via dialect variant.
@@ -459,6 +462,7 @@ class Document(Base):
         back_populates="document",
         uselist=False,
     )
+    review_tasks: Mapped[list[ReviewTask]] = relationship(back_populates="document")
 
 
 class DocumentExtractionResult(Base):
@@ -510,6 +514,119 @@ class DocumentExtractionResult(Base):
     )
 
     document: Mapped[Document] = relationship(back_populates="extraction_result")
+    review_tasks: Mapped[list[ReviewTask]] = relationship(back_populates="extraction_result")
+
+
+class ReviewTask(Base):
+    """Human review queue item for an untrusted M4 extraction candidate.
+
+    One active task per extraction result. Original extraction rows are never
+    mutated; corrections live in ``reviewed_candidate`` and ``ReviewDecision``.
+    """
+
+    __tablename__ = "review_tasks"
+    __table_args__ = (
+        UniqueConstraint(
+            "extraction_result_id",
+            name="uq_review_tasks_extraction_result_id",
+        ),
+        Index("ix_review_tasks_status", "status"),
+        Index("ix_review_tasks_priority", "priority"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("documents.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    extraction_result_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("document_extraction_results.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=ReviewStatus.PENDING.value,
+    )
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    priority: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default=ReviewPriority.MEDIUM.value,
+    )
+    assigned_to: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Working copy of the candidate after human corrections (M4 candidate untouched).
+    reviewed_candidate: Mapped[dict[str, Any] | None] = mapped_column(
+        JsonDocument,
+        nullable=True,
+    )
+    promoted_entity_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    promoted_entity_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    promoted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    document: Mapped[Document] = relationship(back_populates="review_tasks")
+    extraction_result: Mapped[DocumentExtractionResult] = relationship(
+        back_populates="review_tasks",
+    )
+    decisions: Mapped[list[ReviewDecision]] = relationship(
+        back_populates="review_task",
+        cascade="all, delete-orphan",
+        order_by="ReviewDecision.created_at",
+    )
+
+
+class ReviewDecision(Base):
+    """Immutable audit record of a human review action."""
+
+    __tablename__ = "review_decisions"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    review_task_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("review_tasks.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    action: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=ReviewAction.APPROVE.value,
+    )
+    field_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    original_value: Mapped[Any | None] = mapped_column(JsonDocument, nullable=True)
+    corrected_value: Mapped[Any | None] = mapped_column(JsonDocument, nullable=True)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewer: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    evidence_ref: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    review_task: Mapped[ReviewTask] = relationship(back_populates="decisions")
 
 
 # Re-export enum names for callers that want ORM + domain enums together.
@@ -524,6 +641,8 @@ __all__ = [
     "ReconciliationException",
     "Document",
     "DocumentExtractionResult",
+    "ReviewTask",
+    "ReviewDecision",
     "DocumentStatus",
     "DocumentType",
     "ExceptionSeverity",
@@ -532,4 +651,7 @@ __all__ = [
     "GoodsReceiptStatus",
     "InvoiceStatus",
     "PurchaseOrderStatus",
+    "ReviewAction",
+    "ReviewPriority",
+    "ReviewStatus",
 ]

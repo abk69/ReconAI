@@ -434,6 +434,8 @@ def test_alembic_migration_creates_schema(migrated_engine: Engine) -> None:
         "reconciliation_exceptions",
         "documents",
         "document_extraction_results",
+        "review_tasks",
+        "review_decisions",
         "alembic_version",
     }
     tables = set(inspect(migrated_engine).get_table_names())
