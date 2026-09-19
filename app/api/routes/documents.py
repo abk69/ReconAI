@@ -11,6 +11,7 @@ from app.core.config import get_settings
 from app.db.session import get_db
 from app.domain.enums import DocumentStatus, DocumentType
 from app.schemas.documents import DocumentListResponse, DocumentResponse, DocumentUpdateRequest
+from app.schemas.llm_understanding import LlmUnderstandingResponse
 from app.schemas.understanding import UnderstandingResponse
 from app.services.document_service import (
     DocumentAssociationError,
@@ -22,6 +23,10 @@ from app.services.document_service import (
 from app.services.document_understanding_service import (
     DocumentUnderstandingNotFoundError,
     DocumentUnderstandingService,
+)
+from app.services.llm_understanding_service import (
+    LlmUnderstandingNotFoundError,
+    LlmUnderstandingService,
 )
 from app.storage.local import LocalFileStorage
 
@@ -210,4 +215,69 @@ def get_document_understanding(document_id: UUID, session: DbSession) -> Underst
         evidence=result.evidence,
         extractor_version=result.extractor_version,
         has_raw_extraction=bool(result.raw_extraction),
+    )
+
+
+def _llm_to_response(
+    row: object, *, document_status: str | None = None
+) -> LlmUnderstandingResponse:
+    from app.domain.enums import ApplicationQuality, LlmInvocationStatus
+
+    quality = getattr(row, "application_quality", None)
+    return LlmUnderstandingResponse(
+        id=row.id,  # type: ignore[attr-defined]
+        document_id=row.document_id,  # type: ignore[attr-defined]
+        m4_extraction_result_id=row.m4_extraction_result_id,  # type: ignore[attr-defined]
+        provider=row.provider,  # type: ignore[attr-defined]
+        model=row.model,  # type: ignore[attr-defined]
+        prompt_version=row.prompt_version,  # type: ignore[attr-defined]
+        invocation_status=LlmInvocationStatus(row.invocation_status),  # type: ignore[attr-defined]
+        application_quality=ApplicationQuality(quality) if quality else None,
+        quality_reasons=list(row.quality_reasons or []),  # type: ignore[attr-defined]
+        gate_reasons=list(row.gate_reasons or []),  # type: ignore[attr-defined]
+        candidate=row.candidate,  # type: ignore[attr-defined]
+        evidence=list(row.evidence or []),  # type: ignore[attr-defined]
+        validation=row.validation or {},  # type: ignore[attr-defined]
+        comparison=row.comparison,  # type: ignore[attr-defined]
+        evidence_check=row.evidence_check,  # type: ignore[attr-defined]
+        usage=row.usage,  # type: ignore[attr-defined]
+        message=row.message,  # type: ignore[attr-defined]
+        error_code=row.error_code,  # type: ignore[attr-defined]
+        error_message=row.error_message,  # type: ignore[attr-defined]
+        document_status=document_status,
+        created_at=row.created_at,  # type: ignore[attr-defined]
+    )
+
+
+@router.post("/{document_id}/llm-understand", response_model=LlmUnderstandingResponse)
+def llm_understand_document(document_id: UUID, session: DbSession) -> LlmUnderstandingResponse:
+    """Run gated Gemini assistance (M6). Never writes authoritative financial rows."""
+    from app.db.models import Document
+
+    service = LlmUnderstandingService(session)
+    try:
+        row = service.understand(document_id)
+    except LlmUnderstandingNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    document = session.get(Document, document_id)
+    return _llm_to_response(
+        row,
+        document_status=document.status if document is not None else None,
+    )
+
+
+@router.get("/{document_id}/llm-understanding", response_model=LlmUnderstandingResponse)
+def get_llm_understanding(document_id: UUID, session: DbSession) -> LlmUnderstandingResponse:
+    """Return the latest persisted Gemini-assisted understanding result."""
+    from app.db.models import Document
+
+    service = LlmUnderstandingService(session)
+    try:
+        row = service.get_latest(document_id)
+    except LlmUnderstandingNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    document = session.get(Document, document_id)
+    return _llm_to_response(
+        row,
+        document_status=document.status if document is not None else None,
     )

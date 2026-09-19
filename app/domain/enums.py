@@ -144,3 +144,22 @@ class ReviewPriority(StrEnum):
     LOW = "LOW"
     MEDIUM = "MEDIUM"
     HIGH = "HIGH"
+
+
+class ApplicationQuality(StrEnum):
+    """Application-computed quality for an LLM-assisted extraction (not model self-score)."""
+
+    HIGH = "HIGH"
+    MEDIUM = "MEDIUM"
+    REVIEW_REQUIRED = "REVIEW_REQUIRED"
+
+
+class LlmInvocationStatus(StrEnum):
+    """Whether Gemini was invoked for a document understanding run."""
+
+    SKIPPED_M4_SUFFICIENT = "SKIPPED_M4_SUFFICIENT"
+    INVOKED = "INVOKED"
+    PROVIDER_ERROR = "PROVIDER_ERROR"
+    VALIDATION_FAILED = "VALIDATION_FAILED"
+    EVIDENCE_FAILED = "EVIDENCE_FAILED"
+    DISAGREEMENT = "DISAGREEMENT"

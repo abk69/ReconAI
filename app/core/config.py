@@ -52,6 +52,45 @@ class Settings(BaseSettings):
         ge=1,
     )
 
+    # LLM-assisted extraction (M6) — real Gemini only; never hard-code secrets.
+    gemini_api_key: str | None = Field(
+        default=None,
+        description="Google Gemini API key (GEMINI_API_KEY)",
+    )
+    llm_provider: str = Field(
+        default="google",
+        description="LLM provider identifier (google)",
+    )
+    llm_model: str = Field(
+        default="gemini-3.1-flash-lite",
+        description="Gemini model id for structured extraction",
+    )
+    llm_timeout_seconds: float = Field(
+        default=45.0,
+        description="Per-request timeout for Gemini calls",
+        gt=0,
+    )
+    llm_max_input_chars: int = Field(
+        default=24_000,
+        description="Maximum document text characters sent to Gemini",
+        ge=1000,
+    )
+    llm_max_output_tokens: int = Field(
+        default=4096,
+        description="Maximum output tokens for Gemini structured responses",
+        ge=256,
+    )
+    llm_max_retries: int = Field(
+        default=1,
+        description="Bounded retries for transient Gemini failures (not schema retries)",
+        ge=0,
+        le=3,
+    )
+    llm_quality_threshold: str = Field(
+        default="READY_FOR_RECONCILIATION",
+        description="M4 outcome that skips Gemini (cost control)",
+    )
+
 
 @lru_cache
 def get_settings() -> Settings:

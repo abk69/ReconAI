@@ -7,7 +7,7 @@ Intelligent procurement reconciliation and exception-resolution platform.
 **Deterministic reconciliation (M2) establishes financial facts.**  
 **Document understanding (M4) extracts candidates with provenance — it does not invent financial truth.**  
 **Human review (M5) is the trust boundary between candidates and authoritative PO/GRN/Invoice data.**  
-LLMs / RAG / agents are intentionally deferred.
+**Gemini (M6) may assist extraction — it never writes financial truth.**
 
 ## Milestones
 
@@ -19,7 +19,71 @@ LLMs / RAG / agents are intentionally deferred.
 | M3 Document + structured intake | Done |
 | M4 Deterministic document understanding | Done |
 | M5 Extraction evaluation + human review | Done |
-| M6 LLM-assisted extraction (optional) | Not started |
+| M6 Real LLM-assisted extraction (Gemini) | Done |
+
+## M6 — Real Gemini-assisted extraction
+
+M4 remains the deterministic baseline. Gemini (`gemini-3.1-flash-lite` via official `google-genai` SDK) is invoked **only** when the quality gate says M4 needs help. Structured JSON Schema output is validated with Pydantic, grounded against document evidence, compared to M4, and sent to M5 review. **Gemini never writes PO/GRN/Invoice rows.**
+
+```
+M4 candidate
+   │
+   ├─ READY_FOR_RECONCILIATION → skip Gemini (cost control)
+   │
+   └─ REVIEW_REQUIRED / UNKNOWN / OCR / missing fields
+          → Gemini structured extraction
+          → schema + evidence + business validation
+          → M4 vs Gemini comparison
+          → LlmExtractionResult (separate from M4)
+          → M5 ReviewTask
+          → PromotionService → authoritative data → M2
+```
+
+### Interview concepts
+
+| Concept | How ReconAI applies it |
+| --- | --- |
+| LLM as probabilistic component | Gemini produces *candidates*, not facts |
+| Deterministic guardrails | M4 gate, validator, evidence match, M5, M2 |
+| Structured output | `response_schema=GeminiExtractionOutput` |
+| Schema validation | Pydantic after provider response |
+| Grounding / evidence | Snippet must appear in document text |
+| Hallucination mitigation | Unsupported values → REVIEW_REQUIRED |
+| Human-in-the-loop | M5 approve/correct/reject + promote |
+| Cost-aware inference | Skip Gemini when M4 is ready; truncate context |
+| Provider abstraction | `LLMProvider` / `GeminiProvider` |
+| Observability | Token usage metadata when returned |
+| Evaluation | Golden vs M4 vs Gemini (`python -m app.evaluation.m6_runner`) |
+
+### API
+
+```bash
+POST /documents/{id}/llm-understand
+GET  /documents/{id}/llm-understanding
+```
+
+### Configuration
+
+```bash
+GEMINI_API_KEY=           # required for live calls; never commit
+LLM_PROVIDER=google
+LLM_MODEL=gemini-3.1-flash-lite
+LLM_TIMEOUT_SECONDS=45
+LLM_MAX_INPUT_CHARS=24000
+LLM_MAX_OUTPUT_TOKENS=4096
+LLM_MAX_RETRIES=1
+```
+
+### Tests
+
+```bash
+pytest -q                     # offline suite (excludes live_llm)
+pytest -m live_llm -q         # opt-in real Gemini (needs GEMINI_API_KEY)
+python -m app.evaluation.m6_runner
+python -m app.evaluation.m6_runner --live
+```
+
+Behavior matrix for interviews: [`docs/M6_BEHAVIOR.md`](docs/M6_BEHAVIOR.md).
 
 ## M5 — Extraction evaluation + human review
 

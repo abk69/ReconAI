@@ -515,6 +515,71 @@ class DocumentExtractionResult(Base):
 
     document: Mapped[Document] = relationship(back_populates="extraction_result")
     review_tasks: Mapped[list[ReviewTask]] = relationship(back_populates="extraction_result")
+    llm_results: Mapped[list[LlmExtractionResult]] = relationship(
+        back_populates="m4_extraction_result",
+    )
+
+
+class LlmExtractionResult(Base):
+    """Persisted M6 Gemini-assisted extraction — never overwrites M4.
+
+    Gemini candidates are untrusted. Authoritative writes still require M5
+    review + PromotionService.
+    """
+
+    __tablename__ = "llm_extraction_results"
+    __table_args__ = (Index("ix_llm_extraction_results_invocation_status", "invocation_status"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("documents.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    m4_extraction_result_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("document_extraction_results.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    provider: Mapped[str] = mapped_column(String(32), nullable=False, default="google")
+    model: Mapped[str] = mapped_column(String(128), nullable=False)
+    prompt_version: Mapped[str] = mapped_column(String(32), nullable=False, default="m6-1.0")
+    invocation_status: Mapped[str] = mapped_column(String(64), nullable=False)
+    application_quality: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    quality_reasons: Mapped[list[Any]] = mapped_column(JsonDocument, nullable=False, default=list)
+    gate_reasons: Mapped[list[Any]] = mapped_column(JsonDocument, nullable=False, default=list)
+    candidate: Mapped[dict[str, Any] | None] = mapped_column(JsonDocument, nullable=True)
+    evidence: Mapped[list[Any]] = mapped_column(JsonDocument, nullable=False, default=list)
+    validation: Mapped[dict[str, Any]] = mapped_column(JsonDocument, nullable=False, default=dict)
+    comparison: Mapped[dict[str, Any] | None] = mapped_column(JsonDocument, nullable=True)
+    evidence_check: Mapped[dict[str, Any] | None] = mapped_column(JsonDocument, nullable=True)
+    usage: Mapped[dict[str, Any] | None] = mapped_column(JsonDocument, nullable=True)
+    provider_metadata: Mapped[dict[str, Any]] = mapped_column(
+        JsonDocument,
+        nullable=False,
+        default=dict,
+    )
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    document: Mapped[Document] = relationship()
+    m4_extraction_result: Mapped[DocumentExtractionResult | None] = relationship(
+        back_populates="llm_results",
+    )
 
 
 class ReviewTask(Base):
@@ -641,6 +706,7 @@ __all__ = [
     "ReconciliationException",
     "Document",
     "DocumentExtractionResult",
+    "LlmExtractionResult",
     "ReviewTask",
     "ReviewDecision",
     "DocumentStatus",

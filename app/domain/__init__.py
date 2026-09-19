@@ -1,6 +1,7 @@
 """Domain enums and procurement document models."""
 
 from app.domain.enums import (
+    ApplicationQuality,
     DocumentStatus,
     DocumentType,
     ExceptionSeverity,
@@ -10,6 +11,7 @@ from app.domain.enums import (
     FieldConfidence,
     GoodsReceiptStatus,
     InvoiceStatus,
+    LlmInvocationStatus,
     PurchaseOrderStatus,
     ReconciliationStatus,
     ReviewAction,
@@ -28,6 +30,7 @@ from app.domain.models import (
 )
 
 __all__ = [
+    "ApplicationQuality",
     "DocumentStatus",
     "DocumentType",
     "ExceptionSeverity",
@@ -41,6 +44,7 @@ __all__ = [
     "Invoice",
     "InvoiceLine",
     "InvoiceStatus",
+    "LlmInvocationStatus",
     "PurchaseOrder",
     "PurchaseOrderLine",
     "PurchaseOrderStatus",
