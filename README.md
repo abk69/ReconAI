@@ -20,6 +20,33 @@ Intelligent procurement reconciliation and exception-resolution platform.
 | M4 Deterministic document understanding | Done |
 | M5 Extraction evaluation + human review | Done |
 | M6 Real LLM-assisted extraction (Gemini) | Done |
+| M7.1 Policy knowledge-base foundation | Done |
+| M7.x Embeddings / retrieval / grounded Gemini | Not started |
+
+## M7.1 — Policy knowledge-base foundation
+
+Policy guidance is stored separately from procurement transactions so future RAG can cite **versioned** policy text without mixing knowledge into M2 financial tables.
+
+```
+PolicyDocument
+  └── PolicyVersion (label, effective dates, content_hash, status)
+        └── PolicyChunk (ordered text + section/page provenance)
+```
+
+Embeddings, pgvector, retrieval, and Gemini policy answers are **not** implemented yet. See [`docs/M7_POLICY_KB.md`](docs/M7_POLICY_KB.md).
+
+### API
+
+```bash
+POST /policies
+GET  /policies
+GET  /policies/{policy_id}
+POST /policies/{policy_id}/versions
+GET  /policies/{policy_id}/versions
+GET  /policies/{policy_id}/versions/{version_id}
+POST /policies/{policy_id}/versions/{version_id}/chunks
+GET  /policies/{policy_id}/versions/{version_id}/chunks
+```
 
 ## M6 — Real Gemini-assisted extraction
 

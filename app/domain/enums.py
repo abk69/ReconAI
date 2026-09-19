@@ -163,3 +163,11 @@ class LlmInvocationStatus(StrEnum):
     VALIDATION_FAILED = "VALIDATION_FAILED"
     EVIDENCE_FAILED = "EVIDENCE_FAILED"
     DISAGREEMENT = "DISAGREEMENT"
+
+
+class PolicyVersionStatus(StrEnum):
+    """Lifecycle status for a policy knowledge-base version (M7.1)."""
+
+    DRAFT = "DRAFT"
+    ACTIVE = "ACTIVE"
+    RETIRED = "RETIRED"

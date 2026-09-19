@@ -38,6 +38,7 @@ from app.domain.enums import (
     ExceptionType,
     GoodsReceiptStatus,
     InvoiceStatus,
+    PolicyVersionStatus,
     PurchaseOrderStatus,
     ReviewAction,
     ReviewPriority,
@@ -694,6 +695,132 @@ class ReviewDecision(Base):
     review_task: Mapped[ReviewTask] = relationship(back_populates="decisions")
 
 
+class PolicyDocument(Base):
+    """Logical policy identity in the M7 knowledge base (not procurement data)."""
+
+    __tablename__ = "policy_documents"
+    __table_args__ = (
+        UniqueConstraint("name", name="uq_policy_documents_name"),
+        Index("ix_policy_documents_name", "name"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    versions: Mapped[list[PolicyVersion]] = relationship(
+        back_populates="policy_document",
+        cascade="all, delete-orphan",
+        order_by="PolicyVersion.created_at",
+    )
+
+
+class PolicyVersion(Base):
+    """A specific version of a policy document with provenance metadata."""
+
+    __tablename__ = "policy_versions"
+    __table_args__ = (
+        UniqueConstraint(
+            "policy_document_id",
+            "version_label",
+            name="uq_policy_versions_document_version_label",
+        ),
+        Index("ix_policy_versions_status", "status"),
+        Index("ix_policy_versions_effective_from", "effective_from"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    policy_document_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("policy_documents.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    version_label: Mapped[str] = mapped_column(String(64), nullable=False)
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=PolicyVersionStatus.DRAFT.value,
+    )
+    effective_from: Mapped[date] = mapped_column(Date, nullable=False)
+    effective_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    source_filename: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    source_reference: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    policy_document: Mapped[PolicyDocument] = relationship(back_populates="versions")
+    chunks: Mapped[list[PolicyChunk]] = relationship(
+        back_populates="policy_version",
+        cascade="all, delete-orphan",
+        order_by="PolicyChunk.chunk_index",
+    )
+
+
+class PolicyChunk(Base):
+    """Retrievable policy section with citation provenance (no embeddings yet)."""
+
+    __tablename__ = "policy_chunks"
+    __table_args__ = (
+        UniqueConstraint(
+            "policy_version_id",
+            "chunk_index",
+            name="uq_policy_chunks_version_chunk_index",
+        ),
+        Index("ix_policy_chunks_section_id", "section_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    policy_version_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("policy_versions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    section_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    section_title: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_filename: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    policy_version: Mapped[PolicyVersion] = relationship(back_populates="chunks")
+
+
 # Re-export enum names for callers that want ORM + domain enums together.
 __all__ = [
     "Vendor",
@@ -709,6 +836,9 @@ __all__ = [
     "LlmExtractionResult",
     "ReviewTask",
     "ReviewDecision",
+    "PolicyDocument",
+    "PolicyVersion",
+    "PolicyChunk",
     "DocumentStatus",
     "DocumentType",
     "ExceptionSeverity",
@@ -717,6 +847,7 @@ __all__ = [
     "GoodsReceiptStatus",
     "InvoiceStatus",
     "PurchaseOrderStatus",
+    "PolicyVersionStatus",
     "ReviewAction",
     "ReviewPriority",
     "ReviewStatus",
