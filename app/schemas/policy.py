@@ -90,6 +90,17 @@ class PolicyChunkListResponse(BaseModel):
     count: int
 
 
+class PolicyIngestionResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    policy_id: UUID
+    version_id: UUID
+    source_hash: str
+    chunks_created: int
+    status: str
+    message: str | None = None
+
+
 class PolicyVersionRead(BaseModel):
     model_config = ConfigDict(extra="forbid", from_attributes=True)
 

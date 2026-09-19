@@ -91,6 +91,19 @@ class Settings(BaseSettings):
         description="M4 outcome that skips Gemini (cost control)",
     )
 
+    # Policy ingestion / chunking (M7.2)
+    policy_chunk_max_chars: int = Field(
+        default=2000,
+        description="Maximum characters per policy chunk before deterministic split",
+        ge=200,
+        le=50_000,
+    )
+    max_policy_upload_bytes: int = Field(
+        default=10 * 1024 * 1024,
+        description="Maximum policy source upload size in bytes",
+        ge=1,
+    )
+
 
 @lru_cache
 def get_settings() -> Settings:

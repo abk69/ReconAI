@@ -1,11 +1,11 @@
-"""Policy knowledge-base API routes (M7.1)."""
+"""Policy knowledge-base API routes (M7.1 + M7.2 ingestion)."""
 
 from __future__ import annotations
 
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -16,11 +16,13 @@ from app.schemas.policy import (
     PolicyDocumentCreate,
     PolicyDocumentListResponse,
     PolicyDocumentRead,
+    PolicyIngestionResponse,
     PolicyVersionCreate,
     PolicyVersionDetailRead,
     PolicyVersionListResponse,
     PolicyVersionRead,
 )
+from app.services.policy_ingestion_service import PolicyIngestionService
 from app.services.policy_service import (
     PolicyConflictError,
     PolicyNotFoundError,
@@ -30,6 +32,7 @@ from app.services.policy_service import (
 
 router = APIRouter(prefix="/policies", tags=["policies"])
 DbSession = Annotated[Session, Depends(get_db)]
+UploadFileParam = Annotated[UploadFile, File()]
 
 
 def _http_error(exc: Exception) -> HTTPException:
@@ -158,3 +161,34 @@ def list_policy_chunks(
         raise _http_error(exc) from exc
     items = [PolicyChunkRead.model_validate(c) for c in chunks]
     return PolicyChunkListResponse(items=items, count=len(items))
+
+
+@router.post(
+    "/{policy_id}/versions/{version_id}/ingest",
+    response_model=PolicyIngestionResponse,
+)
+async def ingest_policy_source(
+    policy_id: UUID,
+    version_id: UUID,
+    session: DbSession,
+    file: UploadFileParam,
+) -> PolicyIngestionResponse:
+    """Ingest a Markdown or PDF policy source into chunked PolicyChunk rows."""
+    data = await file.read()
+    try:
+        result = PolicyIngestionService(session).ingest(
+            policy_id,
+            version_id,
+            filename=file.filename,
+            data=data,
+        )
+    except (PolicyNotFoundError, PolicyConflictError, PolicyValidationError) as exc:
+        raise _http_error(exc) from exc
+    return PolicyIngestionResponse(
+        policy_id=result.policy_id,
+        version_id=result.version_id,
+        source_hash=result.source_hash,
+        chunks_created=result.chunks_created,
+        status=result.status,
+        message=result.message,
+    )

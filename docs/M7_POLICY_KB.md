@@ -1,9 +1,8 @@
-# M7.1 — Policy Knowledge Base Foundation
+# M7 — Policy Knowledge Base
 
 M7 will eventually add RAG/policy grounding for exception explanations.
-**M7.1 implements only the versioned policy storage foundation.**
 
-## What this stage is
+## M7.1 — Storage foundation
 
 ```
 Policy source
@@ -15,35 +14,67 @@ PolicyVersion (versioned content + lifecycle)
 PolicyChunk (ordered sections with citation provenance)
 ```
 
-## What this stage is NOT
+## M7.2 — Ingestion & deterministic chunking
 
-- No embeddings
-- No pgvector / vector indexes
-- No retrieval / similarity search
-- No LangChain / LlamaIndex
-- No Gemini policy generation
-
-Those belong to later M7 stages:
+Transforms a policy **file** into M7.1 rows:
 
 ```
-Policy chunks
+.md / .pdf upload
     ↓
-Embeddings
+SHA-256 source hash
     ↓
-Vector retrieval
+Markdown or PDF parse (PDF via M4 PyMuPDF)
     ↓
-Grounded Gemini
+Section-aware chunking (POLICY_CHUNK_MAX_CHARS)
     ↓
-Cited explanation
+PolicyChunk rows + provenance
 ```
+
+### Supported formats
+
+| Format | Notes |
+| --- | --- |
+| Markdown (`.md`, `.markdown`) | ATATX headings; lists/paragraphs kept as blocks |
+| PDF (`.pdf`) | Text via existing `PDFExtractor`; page provenance |
+
+Unsupported types → `422`. Empty/unextractable PDF → `422`.
+
+### Chunking algorithm
+
+1. Parse into heading-scoped **sections** with paragraph/list **blocks**.
+2. Pack blocks into chunks while `len <= POLICY_CHUNK_MAX_CHARS` (default 2000).
+3. Oversized blocks split on whitespace (never mid-word when possible).
+4. Contiguous `chunk_index` from 0; SHA-256 per chunk body.
+
+Same bytes + same max ⇒ identical chunks/hashes (ready for M7.3 embeddings).
+
+### Idempotency
+
+- Source SHA-256 stored on `PolicyVersion.content_hash`.
+- Re-ingest identical source → `ALREADY_INGESTED` (no duplicate chunks).
+- Different source on a version that already has chunks → `409` (create a new version).
+
+### Provenance retained
+
+`section_id`, `section_title`, `chunk_index`, `source_filename`, `page_number` (PDF), `content_hash`.
+
+### Deferred to M7.3+
+
+Embeddings, pgvector, retrieval, grounded Gemini answers.
 
 ## Design rules
 
-1. **Separate from procurement transactions** — policy text is knowledge, not PO/GRN/Invoice financial facts (M2).
-2. **Versions are first-class** — policies change; citations must pin a specific `version_label` / `PolicyVersion.id`.
-3. **Chunks preserve provenance** — `section_id`, `section_title`, `chunk_index`, `source_filename`, `page_number`, `content_hash` support future citations without relying on similarity scores alone.
-4. **Deferred retrieval** — store retrievable text now; wire vectors later without rewriting the model.
+1. Policy text is knowledge — separate from PO/GRN/Invoice (M2).
+2. Versions are first-class for citations.
+3. Chunks preserve provenance without relying on similarity scores.
+4. No LLM / vector DB in M7.1–M7.2.
 
 ## Lifecycle
 
 `PolicyVersionStatus`: `DRAFT` → `ACTIVE` → `RETIRED`
+
+## API (ingestion)
+
+```bash
+POST /policies/{policy_id}/versions/{version_id}/ingest
+```
