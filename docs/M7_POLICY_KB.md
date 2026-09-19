@@ -191,6 +191,57 @@ POST /reconciliation/exceptions/{exception_id}/policy-explanation
 
 Optional `persist=true` writes `policy_grounding_results` (AI audit only).
 
+## M7.5 — RAG evaluation + grounding quality
+
+Deterministic evaluation of **retrieval** and **grounding** as separate layers.
+There is **no single overall RAG score** — interview-friendly metrics stay split.
+
+### Dataset
+
+`m7_policy_eval_v1` — small synthetic corpus:
+
+- Price Variance 2026.1 (2%) and 2026.2 (3%) on one document
+- Quantity Tolerance, Tax Rate policies
+- Categories: `RELEVANT_POLICY`, `NO_RELEVANT_POLICY`, `VERSIONED_POLICY`,
+  `CONFLICTING_POLICY`, `CITATION_GROUNDING`, `BOUNDARY_CASE`
+
+Expected chunks are resolved by section id / content markers after seeding
+(UUIDs are assigned at runtime).
+
+### Retrieval metrics
+
+| Metric | Definition |
+| --- | --- |
+| Hit@K | 1 if ≥1 expected chunk is in top-K; undefined if no expected relevant chunks |
+| Recall@K | \|expected ∩ top-K\| / \|expected\|; undefined if \|expected\|=0 |
+| MRR | 1/rank of first expected hit; 0 if none; undefined if \|expected\|=0 |
+
+### Grounding metrics
+
+| Metric | Definition |
+| --- | --- |
+| Citation precision | \|cited ∩ retrieved\| / \|cited\| |
+| Citation recall | \|cited ∩ expected\| / \|expected\| |
+| Answer fact accuracy | Fraction of golden fact values present in the response text (no LLM judge) |
+| Abstention accuracy | Correct `INSUFFICIENT_EVIDENCE` / cases that expect abstention |
+
+Offline eval uses `FakeEmbeddingProvider` + deterministic fake grounding LLM.
+M7.4 production behavior is unchanged.
+
+### Runner
+
+```bash
+python -m app.evaluation.m7_runner          # offline (no API key)
+python -m app.evaluation.m7_runner --live   # bounded live smoke
+pytest -m live_rag_eval -q                  # opt-in live test
+```
+
+### Limitations
+
+- Synthetic policies only — not a production policy corpus.
+- Fake embeddings measure ranking/harness behavior, not Gemini embedding quality.
+- Live smoke is intentionally tiny and optional.
+
 ## Design rules
 
 1. Policy text is knowledge — separate from PO/GRN/Invoice (M2).
@@ -198,7 +249,8 @@ Optional `persist=true` writes `policy_grounding_results` (AI audit only).
 3. Chunks preserve provenance without relying on similarity scores alone.
 4. Embeddings are derived; Gemini must never rewrite policy text.
 5. Grounded answers cite retrieved evidence only — no invented policy.
-6. No LangChain / LlamaIndex.
+6. Evaluation measures the system — it does not tune toward fabricated scores.
+7. No LangChain / LlamaIndex / agents.
 
 ## Lifecycle
 

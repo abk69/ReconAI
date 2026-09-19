@@ -25,6 +25,7 @@ Intelligent procurement reconciliation and exception-resolution platform.
 | M7.2 Policy ingestion & chunking | Done |
 | M7.3 Embeddings + vector retrieval | Done |
 | M7.4 Grounded Gemini policy reasoning | Done |
+| M7.5 RAG evaluation + grounding quality | Done |
 
 ## M7.1 — Policy knowledge-base foundation
 
@@ -64,6 +65,15 @@ POST /reconciliation/exceptions/{exception_id}/policy-explanation
 ```
 
 See [`docs/M7_POLICY_KB.md`](docs/M7_POLICY_KB.md).
+
+### M7.5 — Evaluation
+
+Retrieval and grounding are scored **separately** (Hit@3 / Recall@3 / MRR vs citation precision / fact accuracy / abstention). No single RAG score.
+
+```bash
+python -m app.evaluation.m7_runner
+python -m app.evaluation.m7_runner --live   # optional, needs GEMINI_API_KEY
+```
 
 ### API (M7.1 storage)
 
@@ -137,12 +147,15 @@ LLM_MAX_RETRIES=1
 ### Tests
 
 ```bash
-pytest -q                     # offline suite (excludes live_llm / live_embedding / live_grounding)
+pytest -q                     # offline suite (excludes live_* markers)
 pytest -m live_llm -q         # opt-in real Gemini extraction (needs GEMINI_API_KEY)
 pytest -m live_embedding -q   # opt-in real Gemini embeddings (needs GEMINI_API_KEY)
 pytest -m live_grounding -q   # opt-in grounded policy RAG (needs GEMINI_API_KEY)
+pytest -m live_rag_eval -q    # opt-in M7.5 live RAG smoke (needs GEMINI_API_KEY)
 python -m app.evaluation.m6_runner
+python -m app.evaluation.m7_runner
 python -m app.evaluation.m6_runner --live
+python -m app.evaluation.m7_runner --live
 ```
 
 Behavior matrix for interviews: [`docs/M6_BEHAVIOR.md`](docs/M6_BEHAVIOR.md).

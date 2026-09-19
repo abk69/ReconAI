@@ -36,8 +36,9 @@ markers = [
     "live_llm: live Google Gemini API tests (requires GEMINI_API_KEY; excluded by default)",
     "live_embedding: live Gemini embedding tests (requires GEMINI_API_KEY; excluded by default)",
     "live_grounding: live grounded policy Gemini tests (requires GEMINI_API_KEY; excluded by default)",
+    "live_rag_eval: live M7.5 RAG evaluation smoke (requires GEMINI_API_KEY; excluded by default)",
 ]
-addopts = "-m 'not live_llm and not live_embedding and not live_grounding'"
+addopts = "-m 'not live_llm and not live_embedding and not live_grounding and not live_rag_eval'"
 
 [tool.ruff]
 target-version = "py311"
