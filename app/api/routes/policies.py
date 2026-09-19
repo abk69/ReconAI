@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
+from app.embeddings.base import EmbeddingProviderError
 from app.schemas.policy import (
     PolicyChunkBatchCreate,
     PolicyChunkListResponse,
@@ -16,13 +17,19 @@ from app.schemas.policy import (
     PolicyDocumentCreate,
     PolicyDocumentListResponse,
     PolicyDocumentRead,
+    PolicyEmbedResponse,
     PolicyIngestionResponse,
+    PolicySearchHit,
+    PolicySearchRequest,
+    PolicySearchResponse,
     PolicyVersionCreate,
     PolicyVersionDetailRead,
     PolicyVersionListResponse,
     PolicyVersionRead,
 )
+from app.services.policy_embedding_service import PolicyEmbeddingService
 from app.services.policy_ingestion_service import PolicyIngestionService
+from app.services.policy_retrieval_service import PolicyRetrievalService
 from app.services.policy_service import (
     PolicyConflictError,
     PolicyNotFoundError,
@@ -45,6 +52,11 @@ def _http_error(exc: Exception) -> HTTPException:
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         )
+    if isinstance(exc, EmbeddingProviderError):
+        code = status.HTTP_502_BAD_GATEWAY
+        if exc.code == "MISSING_API_KEY":
+            code = status.HTTP_503_SERVICE_UNAVAILABLE
+        return HTTPException(status_code=code, detail=str(exc))
     return HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
 
 
@@ -191,4 +203,78 @@ async def ingest_policy_source(
         chunks_created=result.chunks_created,
         status=result.status,
         message=result.message,
+    )
+
+
+@router.post(
+    "/{policy_id}/versions/{version_id}/embed",
+    response_model=PolicyEmbedResponse,
+)
+def embed_policy_version(
+    policy_id: UUID,
+    version_id: UUID,
+    session: DbSession,
+) -> PolicyEmbedResponse:
+    """Generate missing/stale embeddings for chunks in this version (explicit, not on GET)."""
+    try:
+        result = PolicyEmbeddingService(session).embed_version(policy_id, version_id)
+    except (PolicyNotFoundError, PolicyValidationError, EmbeddingProviderError) as exc:
+        raise _http_error(exc) from exc
+    return PolicyEmbedResponse(
+        policy_id=result.policy_id,
+        version_id=result.version_id,
+        chunks_total=result.chunks_total,
+        chunks_embedded=result.chunks_embedded,
+        chunks_skipped=result.chunks_skipped,
+        embedding_model=result.embedding_model,
+        status=result.status,
+        message=result.message,
+    )
+
+
+@router.post(
+    "/{policy_id}/versions/{version_id}/search",
+    response_model=PolicySearchResponse,
+)
+def search_policy_version(
+    policy_id: UUID,
+    version_id: UUID,
+    body: PolicySearchRequest,
+    session: DbSession,
+) -> PolicySearchResponse:
+    """Vector similarity search over embedded chunks (evidence only — no generation)."""
+    # Path version is the default scope; optional body override must stay on this document.
+    target_version = body.policy_version_id or version_id
+    try:
+        PolicyService(session).get_version(policy_id, target_version)
+        hits = PolicyRetrievalService(session).retrieve_policy_chunks(
+            body.query,
+            top_k=body.top_k,
+            policy_document_id=policy_id,
+            policy_version_id=target_version,
+        )
+    except (PolicyNotFoundError, PolicyValidationError, EmbeddingProviderError) as exc:
+        raise _http_error(exc) from exc
+    return PolicySearchResponse(
+        query=body.query,
+        top_k=body.top_k,
+        items=[
+            PolicySearchHit(
+                chunk_id=h.chunk_id,
+                policy_document_id=h.policy_document_id,
+                policy_version_id=h.policy_version_id,
+                chunk_index=h.chunk_index,
+                content=h.content,
+                section_id=h.section_id,
+                section_title=h.section_title,
+                page_number=h.page_number,
+                source_filename=h.source_filename,
+                content_hash=h.content_hash,
+                embedding_model=h.embedding_model,
+                distance=h.distance,
+                similarity=h.similarity,
+            )
+            for h in hits
+        ],
+        count=len(hits),
     )

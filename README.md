@@ -22,7 +22,8 @@ Intelligent procurement reconciliation and exception-resolution platform.
 | M6 Real LLM-assisted extraction (Gemini) | Done |
 | M7.1 Policy knowledge-base foundation | Done |
 | M7.2 Policy ingestion & chunking | Done |
-| M7.x Embeddings / retrieval / grounded Gemini | Not started |
+| M7.3 Embeddings + vector retrieval | Done |
+| M7.4 Grounded Gemini generation | Not started |
 
 ## M7.1 — Policy knowledge-base foundation
 
@@ -31,7 +32,7 @@ Policy guidance is stored separately from procurement transactions so future RAG
 ```
 PolicyDocument
   └── PolicyVersion (label, effective dates, content_hash, status)
-        └── PolicyChunk (ordered text + section/page provenance)
+        └── PolicyChunk (ordered text + section/page provenance + optional embedding)
 ```
 
 ### M7.2 — Ingestion & chunking
@@ -40,7 +41,18 @@ PolicyDocument
 POST /policies/{policy_id}/versions/{version_id}/ingest
 ```
 
-Accepts Markdown or PDF. Deterministic section-aware chunking (`POLICY_CHUNK_MAX_CHARS`). Identical source re-ingest is idempotent. **No embeddings yet.** See [`docs/M7_POLICY_KB.md`](docs/M7_POLICY_KB.md).
+Accepts Markdown or PDF. Deterministic section-aware chunking (`POLICY_CHUNK_MAX_CHARS`). Identical source re-ingest is idempotent.
+
+### M7.3 — Embeddings + retrieval
+
+PostgreSQL **pgvector** stores L2-normalized vectors on `PolicyChunk` (derived from content). Default model: `gemini-embedding-001` at **768** dims (`EMBEDDING_MODEL` / `EMBEDDING_DIMENSION`). Cosine distance ranking; no ANN index at portfolio scale. Embedding is explicit — not on GET.
+
+```bash
+POST /policies/{policy_id}/versions/{version_id}/embed
+POST /policies/{policy_id}/versions/{version_id}/search
+```
+
+Docker DB image: `pgvector/pgvector:pg16`. Grounded generation is **M7.4**. See [`docs/M7_POLICY_KB.md`](docs/M7_POLICY_KB.md).
 
 ### API (M7.1 storage)
 
@@ -54,6 +66,8 @@ GET  /policies/{policy_id}/versions/{version_id}
 POST /policies/{policy_id}/versions/{version_id}/chunks
 GET  /policies/{policy_id}/versions/{version_id}/chunks
 POST /policies/{policy_id}/versions/{version_id}/ingest
+POST /policies/{policy_id}/versions/{version_id}/embed
+POST /policies/{policy_id}/versions/{version_id}/search
 ```
 
 ## M6 — Real Gemini-assisted extraction
@@ -112,8 +126,9 @@ LLM_MAX_RETRIES=1
 ### Tests
 
 ```bash
-pytest -q                     # offline suite (excludes live_llm)
-pytest -m live_llm -q         # opt-in real Gemini (needs GEMINI_API_KEY)
+pytest -q                     # offline suite (excludes live_llm / live_embedding)
+pytest -m live_llm -q         # opt-in real Gemini extraction (needs GEMINI_API_KEY)
+pytest -m live_embedding -q   # opt-in real Gemini embeddings (needs GEMINI_API_KEY)
 python -m app.evaluation.m6_runner
 python -m app.evaluation.m6_runner --live
 ```

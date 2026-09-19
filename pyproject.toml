@@ -19,6 +19,7 @@ dependencies = [
     "Pillow>=10.0.0",
     "pytesseract>=0.3.10",
     "google-genai>=1.0.0",
+    "pgvector>=0.3.0",
 ]
 
 [project.optional-dependencies]
@@ -33,8 +34,9 @@ testpaths = ["tests"]
 pythonpath = ["."]
 markers = [
     "live_llm: live Google Gemini API tests (requires GEMINI_API_KEY; excluded by default)",
+    "live_embedding: live Gemini embedding tests (requires GEMINI_API_KEY; excluded by default)",
 ]
-addopts = "-m 'not live_llm'"
+addopts = "-m 'not live_llm and not live_embedding'"
 
 [tool.ruff]
 target-version = "py311"

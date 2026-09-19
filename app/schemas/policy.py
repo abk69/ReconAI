@@ -79,6 +79,9 @@ class PolicyChunkRead(BaseModel):
     content_hash: str
     source_filename: str | None
     page_number: int | None
+    embedding_model: str | None = None
+    embedding_content_hash: str | None = None
+    embedded_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -99,6 +102,54 @@ class PolicyIngestionResponse(BaseModel):
     chunks_created: int
     status: str
     message: str | None = None
+
+
+class PolicyEmbedResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    policy_id: UUID
+    version_id: UUID
+    chunks_total: int
+    chunks_embedded: int
+    chunks_skipped: int
+    embedding_model: str
+    status: str
+    message: str | None = None
+
+
+class PolicySearchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    query: str = Field(min_length=1)
+    top_k: int = Field(default=5, ge=1, le=50)
+    policy_version_id: UUID | None = None
+
+
+class PolicySearchHit(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    chunk_id: UUID
+    policy_document_id: UUID
+    policy_version_id: UUID
+    chunk_index: int
+    content: str
+    section_id: str | None
+    section_title: str | None
+    page_number: int | None
+    source_filename: str | None
+    content_hash: str
+    embedding_model: str | None
+    distance: float
+    similarity: float
+
+
+class PolicySearchResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    query: str
+    top_k: int
+    items: list[PolicySearchHit]
+    count: int
 
 
 class PolicyVersionRead(BaseModel):

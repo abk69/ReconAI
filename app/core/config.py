@@ -104,6 +104,30 @@ class Settings(BaseSettings):
         ge=1,
     )
 
+    # Policy embeddings / retrieval (M7.3)
+    embedding_model: str = Field(
+        default="gemini-embedding-001",
+        description="Gemini embedding model id (EMBEDDING_MODEL)",
+    )
+    embedding_dimension: int = Field(
+        default=768,
+        description="Embedding vector size; must match pgvector column / output_dimensionality",
+        ge=128,
+        le=3072,
+    )
+    embedding_batch_size: int = Field(
+        default=32,
+        description="Max chunks per embed_content batch",
+        ge=1,
+        le=100,
+    )
+    policy_search_default_top_k: int = Field(
+        default=5,
+        description="Default top_k for policy vector search",
+        ge=1,
+        le=50,
+    )
+
 
 @lru_cache
 def get_settings() -> Settings:

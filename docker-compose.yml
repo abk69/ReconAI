@@ -1,6 +1,8 @@
 services:
   db:
-    image: postgres:16-alpine
+    # pgvector-enabled Postgres for M7.3 embeddings (drop-in replacement for postgres:16-alpine).
+    # Same credentials / volume / port as before so existing DATABASE_URL keeps working.
+    image: pgvector/pgvector:pg16
     container_name: reconai-postgres
     environment:
       POSTGRES_USER: reconai

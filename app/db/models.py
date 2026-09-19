@@ -12,6 +12,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     Date,
     DateTime,
@@ -44,9 +45,14 @@ from app.domain.enums import (
     ReviewPriority,
     ReviewStatus,
 )
+from app.embeddings.constants import DEFAULT_EMBEDDING_DIMENSION
 
 # PostgreSQL uses JSONB; SQLite tests use JSON via dialect variant.
 JsonDocument = JSONB().with_variant(JSON(), "sqlite")
+
+# pgvector on PostgreSQL; JSON float arrays on SQLite (offline tests).
+# Dimension must match DEFAULT_EMBEDDING_DIMENSION / migration 0008.
+PolicyEmbeddingVector = Vector(DEFAULT_EMBEDDING_DIMENSION).with_variant(JSON(), "sqlite")
 
 Money = Numeric(18, 4)
 Quantity = Numeric(18, 4)
@@ -780,7 +786,12 @@ class PolicyVersion(Base):
 
 
 class PolicyChunk(Base):
-    """Retrievable policy section with citation provenance (no embeddings yet)."""
+    """Retrievable policy section with citation provenance.
+
+    ``content`` is the source of truth. ``embedding`` is derived data and may be
+    null until M7.3 embedding runs; staleness is detected via
+    ``embedding_content_hash`` / ``embedding_model``.
+    """
 
     __tablename__ = "policy_chunks"
     __table_args__ = (
@@ -806,6 +817,14 @@ class PolicyChunk(Base):
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     source_filename: Mapped[str | None] = mapped_column(String(512), nullable=True)
     page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # M7.3 derived embedding (nullable until embedded).
+    embedding: Mapped[list[float] | None] = mapped_column(
+        PolicyEmbeddingVector,
+        nullable=True,
+    )
+    embedding_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    embedding_content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    embedded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
