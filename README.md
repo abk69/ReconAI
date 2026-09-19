@@ -8,7 +8,8 @@ Intelligent procurement reconciliation and exception-resolution platform.
 **Document understanding (M4) extracts candidates with provenance — it does not invent financial truth.**  
 **Human review (M5) is the trust boundary between candidates and authoritative PO/GRN/Invoice data.**  
 **Gemini (M6) may assist extraction — it never writes financial truth.**  
-**Grounded policy RAG (M7.4) explains retrieved policy evidence — it never overrides M2.**
+**Grounded policy RAG (M7.4) explains retrieved policy evidence — it never overrides M2.**  
+**Controlled agentic resolution (M8) may propose typed workflow actions — never freely mutate financial records.**
 
 ## Milestones
 
@@ -26,6 +27,30 @@ Intelligent procurement reconciliation and exception-resolution platform.
 | M7.3 Embeddings + vector retrieval | Done |
 | M7.4 Grounded Gemini policy reasoning | Done |
 | M7.5 RAG evaluation + grounding quality | Done |
+| M8.1 Agentic resolution architecture | Done |
+
+## M8.1 — Agentic resolution architecture
+
+Controlled pipeline only — **no LLM agent execution yet**:
+
+```
+Exception → ResolutionPlan → ProposedAction(s)
+         → Guardrails → Human Approval → Execution → Audit
+```
+
+Initial actions are workflow-only (`ROUTE_TO_REVIEW`, vendor clarification,
+missing document, escalate). Financial mutation actions are explicitly out of
+scope. Approval APIs record decisions; they do not silently execute.
+
+See [`docs/M8_AGENTIC_RESOLUTION.md`](docs/M8_AGENTIC_RESOLUTION.md).
+
+```bash
+GET  /resolution-plans/{plan_id}
+GET  /resolution-plans/{plan_id}/actions
+POST /resolution-plans/{plan_id}/actions/{action_id}/approve
+POST /resolution-plans/{plan_id}/actions/{action_id}/reject
+GET  /resolution-plans/{plan_id}/executions
+```
 
 ## M7.1 — Policy knowledge-base foundation
 

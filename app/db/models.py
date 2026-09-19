@@ -14,6 +14,7 @@ from typing import Any
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
+    Boolean,
     Date,
     DateTime,
     ForeignKey,
@@ -32,15 +33,20 @@ from sqlalchemy.types import JSON
 
 from app.db.base import Base
 from app.domain.enums import (
+    ActionType,
+    ApprovalDecision,
     DocumentStatus,
     DocumentType,
     ExceptionSeverity,
     ExceptionStatus,
     ExceptionType,
+    ExecutionStatus,
     GoodsReceiptStatus,
     InvoiceStatus,
     PolicyVersionStatus,
+    ProposedActionStatus,
     PurchaseOrderStatus,
+    ResolutionPlanStatus,
     ReviewAction,
     ReviewPriority,
     ReviewStatus,
@@ -879,6 +885,185 @@ class PolicyGroundingResult(Base):
     )
 
 
+class ResolutionPlan(Base):
+    """Agent-proposed resolution plan for a reconciliation exception (M8).
+
+    Plans never mutate financial records. They only orchestrate validated
+    workflow actions subject to guardrails and human approval.
+    """
+
+    __tablename__ = "resolution_plans"
+    __table_args__ = (
+        Index("ix_resolution_plans_exception_id", "reconciliation_exception_id"),
+        Index("ix_resolution_plans_status", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    reconciliation_exception_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        # RESTRICT: deleting an exception must not silently destroy the audit trail.
+        ForeignKey("reconciliation_exceptions.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=ResolutionPlanStatus.PROPOSED.value,
+    )
+    reasoning_summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    policy_grounding_result_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("policy_grounding_results.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    proposed_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    proposed_actions: Mapped[list[ProposedAction]] = relationship(
+        back_populates="resolution_plan",
+        cascade="all, delete-orphan",
+        order_by="ProposedAction.action_order",
+    )
+
+
+class ProposedAction(Base):
+    """One concrete workflow action within a ResolutionPlan."""
+
+    __tablename__ = "proposed_actions"
+    __table_args__ = (
+        UniqueConstraint(
+            "resolution_plan_id",
+            "action_order",
+            name="uq_proposed_actions_plan_order",
+        ),
+        Index("ix_proposed_actions_plan_id", "resolution_plan_id"),
+        Index("ix_proposed_actions_status", "status"),
+        Index("ix_proposed_actions_action_type", "action_type"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    resolution_plan_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("resolution_plans.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    action_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    action_order: Mapped[int] = mapped_column(Integer, nullable=False)
+    parameters: Mapped[dict[str, Any]] = mapped_column(JsonDocument, nullable=False, default=dict)
+    rationale: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    requires_approval: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=ProposedActionStatus.PENDING.value,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    resolution_plan: Mapped[ResolutionPlan] = relationship(back_populates="proposed_actions")
+    approvals: Mapped[list[ActionApproval]] = relationship(
+        back_populates="proposed_action",
+        cascade="all, delete-orphan",
+        order_by="ActionApproval.created_at",
+    )
+    executions: Mapped[list[ActionExecution]] = relationship(
+        back_populates="proposed_action",
+        cascade="all, delete-orphan",
+        order_by="ActionExecution.started_at",
+    )
+
+
+class ActionApproval(Base):
+    """Immutable human authorization decision for a ProposedAction.
+
+    Historical decisions are never overwritten — append a new row instead.
+    """
+
+    __tablename__ = "action_approvals"
+    __table_args__ = (Index("ix_action_approvals_proposed_action_id", "proposed_action_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    proposed_action_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("proposed_actions.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    decision: Mapped[str] = mapped_column(String(32), nullable=False)
+    reviewer: Mapped[str] = mapped_column(String(255), nullable=False)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    decided_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    proposed_action: Mapped[ProposedAction] = relationship(back_populates="approvals")
+
+
+class ActionExecution(Base):
+    """Execution attempt/result for a ProposedAction.
+
+    ``idempotency_key`` is unique so retries cannot create duplicate executions.
+    """
+
+    __tablename__ = "action_executions"
+    __table_args__ = (
+        UniqueConstraint("idempotency_key", name="uq_action_executions_idempotency_key"),
+        Index("ix_action_executions_proposed_action_id", "proposed_action_id"),
+        Index("ix_action_executions_status", "execution_status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    proposed_action_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("proposed_actions.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    execution_status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=ExecutionStatus.PENDING.value,
+    )
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    result: Mapped[dict[str, Any] | None] = mapped_column(JsonDocument, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    proposed_action: Mapped[ProposedAction] = relationship(back_populates="executions")
+
+
 # Re-export enum names for callers that want ORM + domain enums together.
 __all__ = [
     "Vendor",
@@ -898,15 +1083,24 @@ __all__ = [
     "PolicyVersion",
     "PolicyChunk",
     "PolicyGroundingResult",
+    "ResolutionPlan",
+    "ProposedAction",
+    "ActionApproval",
+    "ActionExecution",
+    "ActionType",
+    "ApprovalDecision",
     "DocumentStatus",
     "DocumentType",
     "ExceptionSeverity",
     "ExceptionStatus",
     "ExceptionType",
+    "ExecutionStatus",
     "GoodsReceiptStatus",
     "InvoiceStatus",
     "PurchaseOrderStatus",
     "PolicyVersionStatus",
+    "ProposedActionStatus",
+    "ResolutionPlanStatus",
     "ReviewAction",
     "ReviewPriority",
     "ReviewStatus",

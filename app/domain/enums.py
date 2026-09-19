@@ -171,3 +171,60 @@ class PolicyVersionStatus(StrEnum):
     DRAFT = "DRAFT"
     ACTIVE = "ACTIVE"
     RETIRED = "RETIRED"
+
+
+class ResolutionPlanStatus(StrEnum):
+    """Lifecycle status for an agentic resolution plan (M8).
+
+    Plans propose workflow actions only — they never mutate financial truth.
+    """
+
+    PROPOSED = "PROPOSED"
+    APPROVAL_REQUIRED = "APPROVAL_REQUIRED"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    EXECUTING = "EXECUTING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+
+
+class ProposedActionStatus(StrEnum):
+    """Lifecycle status for a single proposed resolution action."""
+
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    EXECUTING = "EXECUTING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+
+
+class ActionType(StrEnum):
+    """Explicitly registered workflow actions (M8.1).
+
+    Financial mutation actions (MODIFY_*, DELETE_*, APPROVE_PAYMENT) are
+    intentionally absent and must never be added without a later milestone.
+    """
+
+    ROUTE_TO_REVIEW = "ROUTE_TO_REVIEW"
+    REQUEST_VENDOR_CLARIFICATION = "REQUEST_VENDOR_CLARIFICATION"
+    REQUEST_MISSING_DOCUMENT = "REQUEST_MISSING_DOCUMENT"
+    ESCALATE_TO_MANAGER = "ESCALATE_TO_MANAGER"
+
+
+class ApprovalDecision(StrEnum):
+    """Human decision recorded on an ActionApproval row."""
+
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+
+
+class ExecutionStatus(StrEnum):
+    """Status of an ActionExecution attempt."""
+
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    SUCCEEDED = "SUCCEEDED"
+    FAILED = "FAILED"
