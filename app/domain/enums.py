@@ -228,3 +228,37 @@ class ExecutionStatus(StrEnum):
     RUNNING = "RUNNING"
     SUCCEEDED = "SUCCEEDED"
     FAILED = "FAILED"
+
+
+class WorkflowRequestStatus(StrEnum):
+    """Status for vendor-clarification and missing-document workflow requests (M8.2)."""
+
+    PENDING = "PENDING"
+    RESOLVED = "RESOLVED"
+    CANCELLED = "CANCELLED"
+
+
+class EscalationStatus(StrEnum):
+    """Status for manager escalation workflow records (M8.2)."""
+
+    OPEN = "OPEN"
+    ACKNOWLEDGED = "ACKNOWLEDGED"
+    RESOLVED = "RESOLVED"
+    CANCELLED = "CANCELLED"
+
+
+class EscalationPriority(StrEnum):
+    """Priority for manager escalations."""
+
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+
+
+class ExceptionReviewRouteStatus(StrEnum):
+    """Status for exception → human-review routing records (M8.2)."""
+
+    PENDING = "PENDING"
+    IN_REVIEW = "IN_REVIEW"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"

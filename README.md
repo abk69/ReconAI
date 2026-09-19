@@ -28,6 +28,22 @@ Intelligent procurement reconciliation and exception-resolution platform.
 | M7.4 Grounded Gemini policy reasoning | Done |
 | M7.5 RAG evaluation + grounding quality | Done |
 | M8.1 Agentic resolution architecture | Done |
+| M8.2 Tool registry + safe action handlers | Done |
+
+## M8.2 — Safe action handlers
+
+Real deterministic handlers create durable workflow records (review route,
+vendor clarification, missing document, manager escalation). No email, no
+financial mutations, no LLM agent.
+
+```bash
+POST /resolution-plans/{plan_id}/actions/{action_id}/execute
+```
+
+Requires prior approval when `requires_approval` is true. Body:
+`{ "idempotency_key": "..." }`. Stored action parameters are authoritative.
+
+See [`docs/M8_AGENTIC_RESOLUTION.md`](docs/M8_AGENTIC_RESOLUTION.md).
 
 ## M8.1 — Agentic resolution architecture
 
@@ -42,13 +58,12 @@ Initial actions are workflow-only (`ROUTE_TO_REVIEW`, vendor clarification,
 missing document, escalate). Financial mutation actions are explicitly out of
 scope. Approval APIs record decisions; they do not silently execute.
 
-See [`docs/M8_AGENTIC_RESOLUTION.md`](docs/M8_AGENTIC_RESOLUTION.md).
-
 ```bash
 GET  /resolution-plans/{plan_id}
 GET  /resolution-plans/{plan_id}/actions
 POST /resolution-plans/{plan_id}/actions/{action_id}/approve
 POST /resolution-plans/{plan_id}/actions/{action_id}/reject
+POST /resolution-plans/{plan_id}/actions/{action_id}/execute
 GET  /resolution-plans/{plan_id}/executions
 ```
 

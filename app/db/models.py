@@ -37,6 +37,9 @@ from app.domain.enums import (
     ApprovalDecision,
     DocumentStatus,
     DocumentType,
+    EscalationPriority,
+    EscalationStatus,
+    ExceptionReviewRouteStatus,
     ExceptionSeverity,
     ExceptionStatus,
     ExceptionType,
@@ -50,6 +53,7 @@ from app.domain.enums import (
     ReviewAction,
     ReviewPriority,
     ReviewStatus,
+    WorkflowRequestStatus,
 )
 from app.embeddings.constants import DEFAULT_EMBEDDING_DIMENSION
 
@@ -1064,6 +1068,218 @@ class ActionExecution(Base):
     proposed_action: Mapped[ProposedAction] = relationship(back_populates="executions")
 
 
+class ExceptionReviewRoute(Base):
+    """Exception-scoped human-review routing record (M8.2 ROUTE_TO_REVIEW).
+
+    Distinct from M5 ``ReviewTask`` (which requires document + extraction).
+    Optionally links to an M5 task when those IDs are supplied.
+    """
+
+    __tablename__ = "exception_review_routes"
+    __table_args__ = (
+        UniqueConstraint(
+            "proposed_action_id",
+            name="uq_exception_review_routes_proposed_action_id",
+        ),
+        Index("ix_exception_review_routes_exception_id", "reconciliation_exception_id"),
+        Index("ix_exception_review_routes_status", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    reconciliation_exception_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("reconciliation_exceptions.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    proposed_action_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("proposed_actions.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    review_queue: Mapped[str] = mapped_column(String(128), nullable=False)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    assigned_to: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    review_task_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("review_tasks.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=ExceptionReviewRouteStatus.PENDING.value,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class VendorClarificationRequest(Base):
+    """Durable vendor clarification request (no email/external send in M8.2)."""
+
+    __tablename__ = "vendor_clarification_requests"
+    __table_args__ = (
+        UniqueConstraint(
+            "proposed_action_id",
+            name="uq_vendor_clarification_requests_proposed_action_id",
+        ),
+        Index(
+            "ix_vendor_clarification_requests_exception_id",
+            "reconciliation_exception_id",
+        ),
+        Index("ix_vendor_clarification_requests_status", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    reconciliation_exception_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("reconciliation_exceptions.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    proposed_action_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("proposed_actions.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    vendor_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("vendors.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    vendor_reference: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    fields: Mapped[list[Any]] = mapped_column(JsonDocument, nullable=False, default=list)
+    due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=WorkflowRequestStatus.PENDING.value,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class MissingDocumentRequest(Base):
+    """Durable missing-document workflow request (no external contact in M8.2)."""
+
+    __tablename__ = "missing_document_requests"
+    __table_args__ = (
+        UniqueConstraint(
+            "proposed_action_id",
+            name="uq_missing_document_requests_proposed_action_id",
+        ),
+        Index("ix_missing_document_requests_exception_id", "reconciliation_exception_id"),
+        Index("ix_missing_document_requests_status", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    reconciliation_exception_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("reconciliation_exceptions.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    proposed_action_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("proposed_actions.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    document_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    vendor_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("vendors.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    vendor_reference: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=WorkflowRequestStatus.PENDING.value,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class ManagerEscalation(Base):
+    """Durable manager escalation record (no notification send in M8.2)."""
+
+    __tablename__ = "manager_escalations"
+    __table_args__ = (
+        UniqueConstraint(
+            "proposed_action_id",
+            name="uq_manager_escalations_proposed_action_id",
+        ),
+        Index("ix_manager_escalations_exception_id", "reconciliation_exception_id"),
+        Index("ix_manager_escalations_status", "status"),
+        Index("ix_manager_escalations_priority", "priority"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    reconciliation_exception_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("reconciliation_exceptions.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    proposed_action_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("proposed_actions.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    priority: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default=EscalationPriority.MEDIUM.value,
+    )
+    destination: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=EscalationStatus.OPEN.value,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
 # Re-export enum names for callers that want ORM + domain enums together.
 __all__ = [
     "Vendor",
@@ -1087,10 +1303,17 @@ __all__ = [
     "ProposedAction",
     "ActionApproval",
     "ActionExecution",
+    "ExceptionReviewRoute",
+    "VendorClarificationRequest",
+    "MissingDocumentRequest",
+    "ManagerEscalation",
     "ActionType",
     "ApprovalDecision",
     "DocumentStatus",
     "DocumentType",
+    "EscalationPriority",
+    "EscalationStatus",
+    "ExceptionReviewRouteStatus",
     "ExceptionSeverity",
     "ExceptionStatus",
     "ExceptionType",
@@ -1104,4 +1327,5 @@ __all__ = [
     "ReviewAction",
     "ReviewPriority",
     "ReviewStatus",
+    "WorkflowRequestStatus",
 ]

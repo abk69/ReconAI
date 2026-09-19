@@ -1,4 +1,4 @@
-"""API schemas for agentic resolution plans (M8.1)."""
+"""API schemas for agentic resolution plans (M8)."""
 
 from __future__ import annotations
 
@@ -29,6 +29,14 @@ class ActionRejectRequest(BaseModel):
 
     reviewer: str = Field(min_length=1, max_length=255)
     reason: str | None = None
+
+
+class ActionExecuteRequest(BaseModel):
+    """Execute a proposed action. Stored parameters are authoritative."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    idempotency_key: str = Field(min_length=1, max_length=128)
 
 
 class ProposedActionResponse(BaseModel):

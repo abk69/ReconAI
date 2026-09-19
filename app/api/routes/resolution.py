@@ -24,6 +24,7 @@ from app.resolution.transitions import InvalidResolutionTransitionError
 from app.schemas.resolution import (
     ActionApprovalRequest,
     ActionApprovalResponse,
+    ActionExecuteRequest,
     ActionExecutionListResponse,
     ActionExecutionResponse,
     ActionRejectRequest,
@@ -32,6 +33,7 @@ from app.schemas.resolution import (
     ResolutionPlanResponse,
 )
 from app.services.resolution_service import (
+    ResolutionConflictError,
     ResolutionNotFoundError,
     ResolutionService,
     ResolutionValidationError,
@@ -183,3 +185,30 @@ def list_resolution_executions(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     responses = [_execution_response(e) for e in items]
     return ActionExecutionListResponse(items=responses, count=len(responses))
+
+
+@router.post(
+    "/{plan_id}/actions/{action_id}/execute",
+    response_model=ActionExecutionResponse,
+)
+def execute_resolution_action(
+    plan_id: UUID,
+    action_id: UUID,
+    body: ActionExecuteRequest,
+    session: DbSession,
+) -> ActionExecutionResponse:
+    """Execute an approved proposed action using stored parameters only."""
+    service = ResolutionService(session)
+    try:
+        execution = service.execute_action(
+            plan_id,
+            action_id,
+            idempotency_key=body.idempotency_key,
+        )
+    except ResolutionNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ResolutionConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except (ResolutionValidationError, InvalidResolutionTransitionError) as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return _execution_response(execution)

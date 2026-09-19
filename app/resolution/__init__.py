@@ -1,6 +1,6 @@
 """M8 controlled agentic resolution — plans, typed actions, guardrails.
 
-M8.1 provides architecture and persistence only. No LLM agent execution.
+M8.2 provides real safe workflow handlers. No LLM agent execution.
 """
 
 from app.resolution.contracts import (

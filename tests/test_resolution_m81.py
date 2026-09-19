@@ -129,6 +129,8 @@ def test_proposed_action_creation(db_session: Session) -> None:
             {
                 "action_type": ActionType.REQUEST_VENDOR_CLARIFICATION,
                 "parameters": {
+                    "question": "Invoice price exceeds PO price — please clarify unit_price.",
+                    "vendor_reference": "ACME-001",
                     "reason": "Invoice price exceeds PO price",
                     "fields": ["unit_price"],
                 },
@@ -150,7 +152,7 @@ def test_multiple_actions_maintain_deterministic_order(db_session: Session) -> N
         actions=[
             {
                 "action_type": ActionType.REQUEST_MISSING_DOCUMENT,
-                "parameters": {"document_type": "GRN"},
+                "parameters": {"document_type": "GRN", "reason": "Goods receipt not found"},
             },
             {
                 "action_type": ActionType.ROUTE_TO_REVIEW,
@@ -159,8 +161,9 @@ def test_multiple_actions_maintain_deterministic_order(db_session: Session) -> N
             {
                 "action_type": ActionType.ESCALATE_TO_MANAGER,
                 "parameters": {
-                    "manager_role": "AP_MANAGER",
-                    "summary": "Escalate after review",
+                    "reason": "Escalate after review",
+                    "destination": "AP_MANAGER",
+                    "priority": "HIGH",
                 },
             },
         ],
@@ -179,7 +182,7 @@ def test_action_parameters_validate_against_action_type() -> None:
         ActionType.ROUTE_TO_REVIEW,
         {"review_queue": "procurement"},
     )
-    assert parsed.model_dump() == {"review_queue": "procurement"}
+    assert parsed.model_dump()["review_queue"] == "procurement"
 
     with pytest.raises(ValidationError):
         parse_action_parameters(ActionType.ROUTE_TO_REVIEW, {"reason": "wrong shape"})
@@ -263,8 +266,8 @@ def test_approval_required_cannot_execute_without_approval(db_session: Session) 
             {
                 "action_type": ActionType.ESCALATE_TO_MANAGER,
                 "parameters": {
-                    "manager_role": "AP_MANAGER",
-                    "summary": "Need escalation",
+                    "reason": "Need escalation",
+                    "destination": "AP_MANAGER",
                 },
             }
         ],
@@ -418,7 +421,7 @@ def test_api_endpoints_work(api_client: TestClient, db_session: Session) -> None
         actions=[
             {
                 "action_type": ActionType.REQUEST_MISSING_DOCUMENT,
-                "parameters": {"document_type": "PO"},
+                "parameters": {"document_type": "PO", "reason": "PO missing from packet"},
             }
         ],
     )

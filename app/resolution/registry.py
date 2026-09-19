@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from app.domain.enums import ActionType
+from app.resolution.context import ActionExecutionContext
 from app.resolution.contracts import (
     ActionParameters,
     ActionResult,
@@ -28,9 +29,23 @@ class ActionHandler(ABC):
     def validate_parameters(self, parameters: dict[str, Any]) -> ActionParameters:
         return parse_action_parameters(self.action_type, parameters)
 
+    def describe(self) -> dict[str, Any]:
+        """Inspectable metadata for callers (no executable payloads)."""
+        return {
+            "action_type": self.action_type.value,
+            "description": self.description,
+            "requires_approval": self.requires_approval,
+            "parameter_schema": self.parameter_schema.__name__,
+            "parameters_json_schema": self.parameter_schema.model_json_schema(),
+        }
+
     @abstractmethod
-    def execute(self, parameters: ActionParameters) -> ActionResult:
-        """Run the action. M8.1 handlers are safe placeholders only."""
+    def execute(
+        self,
+        parameters: ActionParameters,
+        context: ActionExecutionContext,
+    ) -> ActionResult:
+        """Run the action with typed parameters and session context."""
 
 
 class ActionRegistry:
@@ -61,6 +76,9 @@ class ActionRegistry:
     def list_available(self) -> list[ActionType]:
         return sorted(self._handlers.keys(), key=lambda t: t.value)
 
+    def list_metadata(self) -> list[dict[str, Any]]:
+        return [self.get(t).describe() for t in self.list_available()]
+
     def is_registered(self, action_type: ActionType | str) -> bool:
         try:
             self.get(action_type)
@@ -69,60 +87,21 @@ class ActionRegistry:
             return False
 
 
-class _PlaceholderHandler(ActionHandler):
-    """Safe no-op handler used until a later milestone adds real side effects."""
-
-    def __init__(
-        self,
-        action_type: ActionType,
-        description: str,
-        *,
-        requires_approval: bool = True,
-    ) -> None:
-        self.action_type = action_type
-        self.description = description
-        self.requires_approval = requires_approval
-
-    def execute(self, parameters: ActionParameters) -> ActionResult:
-        return ActionResult(
-            success=True,
-            message=f"Placeholder execution for {self.action_type.value}",
-            data={"action_type": self.action_type.value, "parameters": parameters.model_dump()},
-        )
-
-
 def build_default_registry() -> ActionRegistry:
-    """Return a registry with the four M8.1 workflow actions registered."""
+    """Return a registry with the four M8.2 safe workflow handlers registered."""
+    from app.resolution.handlers.escalate import EscalateToManagerHandler
+    from app.resolution.handlers.missing_document import RequestMissingDocumentHandler
+    from app.resolution.handlers.route_to_review import RouteToReviewHandler
+    from app.resolution.handlers.vendor_clarification import (
+        RequestVendorClarificationHandler,
+    )
+
     registry = ActionRegistry()
-    specs: list[tuple[ActionType, str, bool]] = [
-        (
-            ActionType.ROUTE_TO_REVIEW,
-            "Route the exception to a human review queue.",
-            True,
-        ),
-        (
-            ActionType.REQUEST_VENDOR_CLARIFICATION,
-            "Request clarification from the vendor on disputed fields.",
-            True,
-        ),
-        (
-            ActionType.REQUEST_MISSING_DOCUMENT,
-            "Request a missing supporting document.",
-            True,
-        ),
-        (
-            ActionType.ESCALATE_TO_MANAGER,
-            "Escalate the exception to a manager role.",
-            True,
-        ),
-    ]
-    for action_type, description, requires_approval in specs:
-        registry.register(
-            action_type,
-            _PlaceholderHandler(
-                action_type,
-                description,
-                requires_approval=requires_approval,
-            ),
-        )
+    for handler in (
+        RouteToReviewHandler(),
+        RequestVendorClarificationHandler(),
+        RequestMissingDocumentHandler(),
+        EscalateToManagerHandler(),
+    ):
+        registry.register(handler.action_type, handler)
     return registry

@@ -34,9 +34,10 @@ PLAN_ALLOWED_TRANSITIONS: dict[ResolutionPlanStatus, frozenset[ResolutionPlanSta
             ResolutionPlanStatus.CANCELLED,
         }
     ),
+    # Allow retry after a failed execution attempt.
+    ResolutionPlanStatus.FAILED: frozenset({ResolutionPlanStatus.EXECUTING}),
     ResolutionPlanStatus.REJECTED: frozenset(),
     ResolutionPlanStatus.COMPLETED: frozenset(),
-    ResolutionPlanStatus.FAILED: frozenset(),
     ResolutionPlanStatus.CANCELLED: frozenset(),
 }
 
@@ -62,9 +63,10 @@ ACTION_ALLOWED_TRANSITIONS: dict[ProposedActionStatus, frozenset[ProposedActionS
             ProposedActionStatus.FAILED,
         }
     ),
+    # Failed executions may be retried with a new idempotency key.
+    ProposedActionStatus.FAILED: frozenset({ProposedActionStatus.EXECUTING}),
     ProposedActionStatus.REJECTED: frozenset(),
     ProposedActionStatus.COMPLETED: frozenset(),
-    ProposedActionStatus.FAILED: frozenset(),
     ProposedActionStatus.CANCELLED: frozenset(),
 }
 
@@ -89,7 +91,7 @@ NON_EXECUTABLE_PLAN_STATUSES = frozenset(
         ResolutionPlanStatus.REJECTED,
         ResolutionPlanStatus.CANCELLED,
         ResolutionPlanStatus.COMPLETED,
-        ResolutionPlanStatus.FAILED,
+        # FAILED is retryable via FAILED → EXECUTING.
     }
 )
 

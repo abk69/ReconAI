@@ -15,6 +15,68 @@ M8.1 is **domain architecture and persistence only**.
 | Human approval APIs | MODIFY_INVOICE / MODIFY_PO / DELETE_* / APPROVE_PAYMENT |
 | Idempotent execution records | Silent execute-on-approve |
 
+## M8.2 scope — Tool registry + safe action handlers
+
+M8.2 turns the four M8.1 placeholders into **real deterministic handlers** that
+create durable workflow records only.
+
+| Included | Still not included |
+| --- | --- |
+| Typed parameter contracts (strict) | LLM agent / Gemini tool calling |
+| Real handlers under `app/resolution/handlers/` | Email / Slack / HTTP notifications |
+| Workflow tables for route / clarification / missing doc / escalation | Financial mutations |
+| Execute API endpoint | Autonomous planning |
+| Optional M5 `ReviewTask` link on ROUTE_TO_REVIEW | Arbitrary `execute_tool` |
+
+### Four real safe actions
+
+| Action | Workflow record | Notes |
+| --- | --- | --- |
+| `ROUTE_TO_REVIEW` | `exception_review_routes` | Exception-scoped review routing; optional M5 `ReviewTask` when document+extraction IDs supplied |
+| `REQUEST_VENDOR_CLARIFICATION` | `vendor_clarification_requests` | No email — durable request only |
+| `REQUEST_MISSING_DOCUMENT` | `missing_document_requests` | No external contact |
+| `ESCALATE_TO_MANAGER` | `manager_escalations` | No manager notification |
+
+Each handler returns a structured `ActionResult` with `status`, `reference_id`,
+and `message`. One successful `ProposedAction` maps to at most one workflow row
+(`proposed_action_id` unique).
+
+### Typed parameters (M8.2)
+
+- `ROUTE_TO_REVIEW`: `review_queue`, optional `reason` / `assigned_to` / M5 IDs
+- `REQUEST_VENDOR_CLARIFICATION`: `question` + `vendor_id` **or** `vendor_reference`; optional `reason` / `fields` / `due_date`
+- `REQUEST_MISSING_DOCUMENT`: `document_type`, `reason`; optional vendor refs
+- `ESCALATE_TO_MANAGER`: `reason`, `priority`, optional `destination`
+
+Unknown fields are rejected (`extra="forbid"`).
+
+### Execution lifecycle (M8.2)
+
+```
+validate (registry, params, plan, approval, idempotency)
+    ↓
+create ActionExecution (PENDING → RUNNING)
+    ↓
+handler in savepoint → workflow row
+    ↓
+SUCCEEDED + structured result   OR   FAILED + structured error
+```
+
+Handler side effects run in a nested savepoint so a failure rolls back the
+business row while preserving the FAILED execution audit record. Failed
+actions may be retried with a new idempotency key (`FAILED → EXECUTING`).
+
+### What actions still CANNOT do
+
+- Modify invoice / PO / GRN financial values
+- Approve payment or delete transactions
+- Execute SQL, shell, URLs, or dynamic Python
+- Accept arbitrary JSON as an executable tool contract
+- Send email or call external APIs
+- Bypass approval or stored ProposedAction parameters
+
+There is still **no LLM agent**.
+
 ## Why controlled actions
 
 Procurement reconciliation touches money. An unconstrained agent that can call
@@ -95,8 +157,9 @@ Parameters are untrusted input. Every executable action must:
 There is no path for arbitrary function names, SQL, shell commands, URLs, or
 Python expressions to become executable.
 
-M8.1 handlers are **placeholders** that return structured `ActionResult`
-payloads without side effects on M2 tables.
+M8.1 handlers were **placeholders**. M8.2 registers real handlers via
+`build_default_registry()` — still explicit registration only; no dynamic
+function discovery.
 
 ## Human approval boundary
 
@@ -133,6 +196,8 @@ ReconciliationException
     → ProposedAction (type, order, parameters, rationale)
       → ActionApproval (decision, reviewer, reason, decided_at)  # append-only
       → ActionExecution (status, result / error, timestamps, idempotency_key)
+          → ExceptionReviewRoute | VendorClarificationRequest
+            | MissingDocumentRequest | ManagerEscalation
 ```
 
 FK policy for audit safety:
@@ -141,18 +206,24 @@ FK policy for audit safety:
   Deleting an exception cannot silently destroy resolution audit rows.
 - Optional `policy_grounding_result_id` → **SET NULL**
 - Plan → actions → approvals/executions cascade within the plan tree
+- Workflow request tables → exception / proposed_action **RESTRICT**; unique on `proposed_action_id`
 
 Historical approval decisions are never overwritten; new rows are appended.
 
-## API (M8.1)
+## API
 
 ```bash
 GET  /resolution-plans/{plan_id}
 GET  /resolution-plans/{plan_id}/actions
 POST /resolution-plans/{plan_id}/actions/{action_id}/approve
 POST /resolution-plans/{plan_id}/actions/{action_id}/reject
+POST /resolution-plans/{plan_id}/actions/{action_id}/execute
 GET  /resolution-plans/{plan_id}/executions
 ```
+
+`execute` requires `{ "idempotency_key": "..." }`. Stored ProposedAction
+parameters are authoritative — callers cannot inject alternate parameters.
+Approval remains a separate step and never silently executes.
 
 ## Relationship to earlier milestones
 
@@ -163,9 +234,9 @@ GET  /resolution-plans/{plan_id}/executions
 | M5 | Human promotion boundary for documents — separate from M8 action approval |
 | M7 | Policy grounding may be referenced on a plan — never mutated by M8 |
 
-## Later milestones (not M8.1)
+## Later milestones (not M8.2)
 
 - LLM agent that produces ResolutionPlans
 - Gemini tool calling bound to the ActionRegistry
-- Real (still non-financial) side effects for workflow actions
+- External notifications for clarification / escalation
 - Optional carefully gated financial mutation actions behind stronger controls

@@ -1,7 +1,7 @@
-"""Resolution plan service — propose, approve, and (guardrailed) execute actions.
+"""Resolution plan service — propose, approve, and guardrailed execute actions.
 
-M8.1: no LLM agent. Approval endpoints only record decisions; they do not
-silently execute. ``execute_action`` exists for controlled later use / tests.
+Approval endpoints only record decisions; they do not silently execute.
+Handlers create workflow records only — never financial mutations.
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ from app.domain.enums import (
     ProposedActionStatus,
     ResolutionPlanStatus,
 )
+from app.resolution.context import ActionExecutionContext
 from app.resolution.contracts import ActionRequest, parse_action_request
 from app.resolution.guardrails import (
     GuardrailError,
@@ -312,6 +313,7 @@ class ResolutionService:
         if plan_status in {
             ResolutionPlanStatus.APPROVED,
             ResolutionPlanStatus.APPROVAL_REQUIRED,
+            ResolutionPlanStatus.FAILED,
         }:
             assert_plan_transition(plan_status, ResolutionPlanStatus.EXECUTING)
             plan.status = ResolutionPlanStatus.EXECUTING.value
@@ -321,10 +323,11 @@ class ResolutionService:
             )
 
         action_status = ProposedActionStatus(action.status)
-        if (
-            action_status is ProposedActionStatus.APPROVED
-            or action_status is ProposedActionStatus.PENDING
-        ):
+        if action_status in {
+            ProposedActionStatus.APPROVED,
+            ProposedActionStatus.PENDING,
+            ProposedActionStatus.FAILED,
+        }:
             assert_action_transition(action_status, ProposedActionStatus.EXECUTING)
         else:
             raise ResolutionValidationError(
@@ -340,11 +343,21 @@ class ResolutionService:
         try:
             handler = self._registry.get(action.action_type)
             typed = handler.validate_parameters(dict(action.parameters or {}))
-            result = handler.execute(typed)
+            ctx = ActionExecutionContext(
+                session=self._session,
+                plan=plan,
+                action=action,
+                exception=exception_before,
+                idempotency_key=idempotency_key,
+            )
+            # Nested savepoint: handler side effects roll back on failure while
+            # the ActionExecution FAILED audit row is preserved.
+            with self._session.begin_nested():
+                result = handler.execute(typed, ctx)
             assert_execution_transition(ExecutionStatus.RUNNING, ExecutionStatus.SUCCEEDED)
             execution.execution_status = ExecutionStatus.SUCCEEDED.value
             execution.completed_at = datetime.now(UTC)
-            execution.result = result.model_dump()
+            execution.result = result.model_dump(mode="json")
             assert_action_transition(
                 ProposedActionStatus.EXECUTING, ProposedActionStatus.COMPLETED
             )
@@ -355,6 +368,12 @@ class ResolutionService:
             execution.completed_at = datetime.now(UTC)
             execution.error_code = type(exc).__name__
             execution.error_message = str(exc)
+            execution.result = {
+                "success": False,
+                "status": "failed",
+                "message": str(exc),
+                "error_code": type(exc).__name__,
+            }
             assert_action_transition(
                 ProposedActionStatus.EXECUTING, ProposedActionStatus.FAILED
             )
