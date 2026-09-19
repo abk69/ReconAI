@@ -128,6 +128,23 @@ class Settings(BaseSettings):
         le=50,
     )
 
+    # Policy grounded reasoning (M7.4)
+    policy_grounding_top_k: int = Field(
+        default=5,
+        description="Top-K policy chunks retrieved for grounded explanation",
+        ge=1,
+        le=50,
+    )
+    policy_retrieval_min_similarity: float = Field(
+        default=0.25,
+        description=(
+            "Minimum cosine similarity for a retrieved chunk to count as evidence. "
+            "Below this, Gemini is not called (INSUFFICIENT_EVIDENCE)."
+        ),
+        ge=0.0,
+        le=1.0,
+    )
+
 
 @lru_cache
 def get_settings() -> Settings:

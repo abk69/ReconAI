@@ -1,16 +1,25 @@
 """Reconciliation API routes (thin adapters)."""
 
 from typing import Annotated
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Body, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.db.models import ReconciliationException
 from app.db.session import get_db
+from app.llm.base import LLMProviderError
+from app.llm.grounding_schemas import PolicyExplanationRequest, PolicyExplanationResponse
 from app.schemas.reconciliation import (
     ExceptionResponse,
     ReconciliationRunRequest,
     ReconciliationRunResponse,
     ReconciliationSummaryResponse,
+)
+from app.services.policy_grounding_service import (
+    PolicyGroundingNotFoundError,
+    PolicyGroundingService,
+    PolicyGroundingValidationError,
 )
 from app.services.reconciliation_service import (
     ReconciliationNotFoundError,
@@ -87,4 +96,47 @@ def run_reconciliation(
         purchase_order_id=result.purchase_order_id,
         invoice_id=result.invoice_id,
         goods_receipt_ids=result.goods_receipt_ids,
+    )
+
+
+@router.post(
+    "/exceptions/{exception_id}/policy-explanation",
+    response_model=PolicyExplanationResponse,
+)
+def explain_exception_policy(
+    exception_id: UUID,
+    session: DbSession,
+    body: Annotated[PolicyExplanationRequest | None, Body()] = None,
+) -> PolicyExplanationResponse:
+    """Grounded policy explanation for an M2 exception (AI-derived; does not mutate M2)."""
+    req = body or PolicyExplanationRequest()
+    try:
+        result = PolicyGroundingService(session).explain_exception(
+            exception_id,
+            policy_version_id=req.policy_version_id,
+            policy_document_id=req.policy_document_id,
+            top_k=req.top_k,
+            persist=req.persist,
+        )
+    except PolicyGroundingNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PolicyGroundingValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+    except LLMProviderError as exc:
+        # Provider errors are usually returned as structured PROVIDER_ERROR by the
+        # service; this catches unexpected raises before that mapping.
+        code = status.HTTP_502_BAD_GATEWAY
+        if exc.code == "MISSING_API_KEY":
+            code = status.HTTP_503_SERVICE_UNAVAILABLE
+        raise HTTPException(status_code=code, detail=str(exc)) from exc
+
+    exc_row = session.get(ReconciliationException, exception_id)
+    return PolicyExplanationResponse(
+        **result.model_dump(),
+        exception_type=exc_row.exception_type if exc_row else None,
+        exception_status=exc_row.status if exc_row else None,
+        reconciliation_evidence=dict(exc_row.evidence or {}) if exc_row else {},
     )

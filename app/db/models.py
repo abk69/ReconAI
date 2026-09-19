@@ -840,6 +840,45 @@ class PolicyChunk(Base):
     policy_version: Mapped[PolicyVersion] = relationship(back_populates="chunks")
 
 
+class PolicyGroundingResult(Base):
+    """AI-derived policy explanation audit row (M7.4).
+
+    Never authoritative financial truth. Does not overwrite reconciliation exceptions.
+    """
+
+    __tablename__ = "policy_grounding_results"
+    __table_args__ = (
+        Index("ix_policy_grounding_results_exception_id", "reconciliation_exception_id"),
+        Index("ix_policy_grounding_results_status", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    reconciliation_exception_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("reconciliation_exceptions.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(String(64), nullable=False)
+    conclusion: Mapped[str] = mapped_column(Text, nullable=False)
+    explanation: Mapped[str] = mapped_column(Text, nullable=False)
+    policy_support: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    limitations: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    citations: Mapped[list[Any]] = mapped_column(JsonDocument, nullable=False, default=list)
+    retrieved_chunk_ids: Mapped[list[Any]] = mapped_column(
+        JsonDocument, nullable=False, default=list
+    )
+    retrieval_query: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    provider_metadata: Mapped[dict[str, Any]] = mapped_column(
+        JsonDocument, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+
 # Re-export enum names for callers that want ORM + domain enums together.
 __all__ = [
     "Vendor",
@@ -858,6 +897,7 @@ __all__ = [
     "PolicyDocument",
     "PolicyVersion",
     "PolicyChunk",
+    "PolicyGroundingResult",
     "DocumentStatus",
     "DocumentType",
     "ExceptionSeverity",

@@ -7,7 +7,8 @@ Intelligent procurement reconciliation and exception-resolution platform.
 **Deterministic reconciliation (M2) establishes financial facts.**  
 **Document understanding (M4) extracts candidates with provenance — it does not invent financial truth.**  
 **Human review (M5) is the trust boundary between candidates and authoritative PO/GRN/Invoice data.**  
-**Gemini (M6) may assist extraction — it never writes financial truth.**
+**Gemini (M6) may assist extraction — it never writes financial truth.**  
+**Grounded policy RAG (M7.4) explains retrieved policy evidence — it never overrides M2.**
 
 ## Milestones
 
@@ -23,7 +24,7 @@ Intelligent procurement reconciliation and exception-resolution platform.
 | M7.1 Policy knowledge-base foundation | Done |
 | M7.2 Policy ingestion & chunking | Done |
 | M7.3 Embeddings + vector retrieval | Done |
-| M7.4 Grounded Gemini generation | Not started |
+| M7.4 Grounded Gemini policy reasoning | Done |
 
 ## M7.1 — Policy knowledge-base foundation
 
@@ -52,7 +53,17 @@ POST /policies/{policy_id}/versions/{version_id}/embed
 POST /policies/{policy_id}/versions/{version_id}/search
 ```
 
-Docker DB image: `pgvector/pgvector:pg16`. Grounded generation is **M7.4**. See [`docs/M7_POLICY_KB.md`](docs/M7_POLICY_KB.md).
+Docker DB image: `pgvector/pgvector:pg16`.
+
+### M7.4 — Grounded policy explanation
+
+RAG over retrieved chunks only. M2 remains financial authority; Gemini explains policy implications with validated citations. Weak/empty retrieval → `INSUFFICIENT_EVIDENCE` (no general-knowledge answers). Multiple ACTIVE versions of the same document → `CONFLICTING_POLICY`.
+
+```bash
+POST /reconciliation/exceptions/{exception_id}/policy-explanation
+```
+
+See [`docs/M7_POLICY_KB.md`](docs/M7_POLICY_KB.md).
 
 ### API (M7.1 storage)
 
@@ -126,9 +137,10 @@ LLM_MAX_RETRIES=1
 ### Tests
 
 ```bash
-pytest -q                     # offline suite (excludes live_llm / live_embedding)
+pytest -q                     # offline suite (excludes live_llm / live_embedding / live_grounding)
 pytest -m live_llm -q         # opt-in real Gemini extraction (needs GEMINI_API_KEY)
 pytest -m live_embedding -q   # opt-in real Gemini embeddings (needs GEMINI_API_KEY)
+pytest -m live_grounding -q   # opt-in grounded policy RAG (needs GEMINI_API_KEY)
 python -m app.evaluation.m6_runner
 python -m app.evaluation.m6_runner --live
 ```
