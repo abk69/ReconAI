@@ -187,6 +187,7 @@ class ResolutionPlanStatus(StrEnum):
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
     CANCELLED = "CANCELLED"
+    NO_ACTION_RECOMMENDED = "NO_ACTION_RECOMMENDED"
 
 
 class ProposedActionStatus(StrEnum):

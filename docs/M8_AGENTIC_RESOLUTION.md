@@ -234,9 +234,58 @@ Approval remains a separate step and never silently executes.
 | M5 | Human promotion boundary for documents — separate from M8 action approval |
 | M7 | Policy grounding may be referenced on a plan — never mutated by M8 |
 
-## Later milestones (not M8.2)
+## M8.3 — AI Resolution Planner
 
-- LLM agent that produces ResolutionPlans
-- Gemini tool calling bound to the ActionRegistry
+**The model proposes; the application validates; the human authorizes; the executor performs.**
+
+```
+Exception
+  → deterministic M2 facts
+  → optional M7 policy grounding
+  → Gemini planner (structured JSON only)
+  → schema + registry + typed contract validation
+  → ResolutionPlan + ProposedAction(s)
+  → human approval (M8.1/M8.2)
+  → execution (M8.2 handlers)
+```
+
+Gemini is a **planner**, never an executor. It cannot call tools, approve actions,
+mutate financial records, send email, or invent action types outside:
+
+`ROUTE_TO_REVIEW` | `REQUEST_VENDOR_CLARIFICATION` | `REQUEST_MISSING_DOCUMENT` | `ESCALATE_TO_MANAGER`
+
+### Prompt trust boundaries
+
+| Section | Trust |
+| --- | --- |
+| System instructions + constraints | Trusted |
+| Reconciliation facts (M2) | Trusted |
+| Grounding metadata (status/conclusion IDs) | Trusted application summary |
+| Policy explanation / citations / vendor text | **Untrusted data** |
+| Available action contracts | Trusted allowlist |
+
+### Planning idempotency
+
+`planning_key = sha256(exception_id | grounding_id | planner_version | prompt_version | model)`  
+Unique on `resolution_plans.planning_key`. Same context returns the existing plan unless `force_replan=true`.
+
+### Planning API
+
+```bash
+POST /reconciliation/exceptions/{exception_id}/resolution-plan
+```
+
+Body (optional): `{ "force_replan": false, "policy_grounding_result_id": "..." }`  
+Never executes or approves actions.
+
+### Live test
+
+```bash
+pytest -m live_resolution_planner -q   # requires GEMINI_API_KEY
+```
+
+## Later milestones (not M8.3)
+
+- Gemini tool calling that executes (still must go through registry + approval)
 - External notifications for clarification / escalation
 - Optional carefully gated financial mutation actions behind stronger controls

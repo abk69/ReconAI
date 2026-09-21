@@ -39,6 +39,7 @@ PLAN_ALLOWED_TRANSITIONS: dict[ResolutionPlanStatus, frozenset[ResolutionPlanSta
     ResolutionPlanStatus.REJECTED: frozenset(),
     ResolutionPlanStatus.COMPLETED: frozenset(),
     ResolutionPlanStatus.CANCELLED: frozenset(),
+    ResolutionPlanStatus.NO_ACTION_RECOMMENDED: frozenset(),
 }
 
 ACTION_ALLOWED_TRANSITIONS: dict[ProposedActionStatus, frozenset[ProposedActionStatus]] = {
@@ -91,6 +92,7 @@ NON_EXECUTABLE_PLAN_STATUSES = frozenset(
         ResolutionPlanStatus.REJECTED,
         ResolutionPlanStatus.CANCELLED,
         ResolutionPlanStatus.COMPLETED,
+        ResolutionPlanStatus.NO_ACTION_RECOMMENDED,
         # FAILED is retryable via FAILED → EXECUTING.
     }
 )

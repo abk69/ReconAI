@@ -900,6 +900,7 @@ class ResolutionPlan(Base):
     __table_args__ = (
         Index("ix_resolution_plans_exception_id", "reconciliation_exception_id"),
         Index("ix_resolution_plans_status", "status"),
+        UniqueConstraint("planning_key", name="uq_resolution_plans_planning_key"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -922,6 +923,17 @@ class ResolutionPlan(Base):
         index=True,
     )
     proposed_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # M8.3 planner observability / idempotency
+    planning_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    planner_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    prompt_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    provider_metadata: Mapped[dict[str, Any]] = mapped_column(
+        JsonDocument,
+        nullable=False,
+        default=dict,
+    )
+    planning_latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    limitations: Mapped[str] = mapped_column(Text, nullable=False, default="")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -938,6 +950,57 @@ class ResolutionPlan(Base):
         back_populates="resolution_plan",
         cascade="all, delete-orphan",
         order_by="ProposedAction.action_order",
+    )
+
+
+class ResolutionPlanningAttempt(Base):
+    """Audit row for an M8.3 AI planning attempt (success or failure).
+
+    Failed attempts must not leave ProposedAction rows. Successful attempts
+    may link to the created ``ResolutionPlan``.
+    """
+
+    __tablename__ = "resolution_planning_attempts"
+    __table_args__ = (
+        Index("ix_resolution_planning_attempts_exception_id", "reconciliation_exception_id"),
+        Index("ix_resolution_planning_attempts_planning_key", "planning_key"),
+        Index("ix_resolution_planning_attempts_status", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    reconciliation_exception_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("reconciliation_exceptions.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    planning_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    resolution_plan_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("resolution_plans.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    policy_grounding_result_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("policy_grounding_results.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    planner_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    prompt_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    action_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    provider_metadata: Mapped[dict[str, Any]] = mapped_column(
+        JsonDocument,
+        nullable=False,
+        default=dict,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
     )
 
 
@@ -1300,6 +1363,7 @@ __all__ = [
     "PolicyChunk",
     "PolicyGroundingResult",
     "ResolutionPlan",
+    "ResolutionPlanningAttempt",
     "ProposedAction",
     "ActionApproval",
     "ActionExecution",

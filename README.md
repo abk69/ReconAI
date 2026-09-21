@@ -29,6 +29,19 @@ Intelligent procurement reconciliation and exception-resolution platform.
 | M7.5 RAG evaluation + grounding quality | Done |
 | M8.1 Agentic resolution architecture | Done |
 | M8.2 Tool registry + safe action handlers | Done |
+| M8.3 AI resolution planner | Done |
+
+## M8.3 — AI resolution planner
+
+Gemini proposes registered workflow actions only. Application validates against
+typed contracts + ActionRegistry, then persists a `ResolutionPlan`. Humans
+still approve; M8.2 handlers still execute. **No financial mutation.**
+
+```bash
+POST /reconciliation/exceptions/{exception_id}/resolution-plan
+```
+
+See [`docs/M8_AGENTIC_RESOLUTION.md`](docs/M8_AGENTIC_RESOLUTION.md).
 
 ## M8.2 — Safe action handlers
 

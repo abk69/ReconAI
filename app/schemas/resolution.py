@@ -90,6 +90,11 @@ class ResolutionPlanResponse(BaseModel):
     reasoning_summary: str
     policy_grounding_result_id: UUID | None = None
     proposed_by: str | None = None
+    planning_key: str | None = None
+    planner_model: str | None = None
+    prompt_version: str | None = None
+    limitations: str = ""
+    planning_latency_ms: int | None = None
     created_at: datetime
     updated_at: datetime
     actions: list[ProposedActionResponse] = Field(default_factory=list)

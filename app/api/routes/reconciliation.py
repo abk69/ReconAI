@@ -10,6 +10,7 @@ from app.db.models import ReconciliationException
 from app.db.session import get_db
 from app.llm.base import LLMProviderError
 from app.llm.grounding_schemas import PolicyExplanationRequest, PolicyExplanationResponse
+from app.llm.resolution_schemas import ResolutionPlanCreateRequest, ResolutionPlanningResponse
 from app.schemas.reconciliation import (
     ExceptionResponse,
     ReconciliationRunRequest,
@@ -25,6 +26,12 @@ from app.services.reconciliation_service import (
     ReconciliationNotFoundError,
     ReconciliationService,
     ReconciliationServiceError,
+)
+from app.services.resolution_planning_service import (
+    ResolutionPlanningNotFoundError,
+    ResolutionPlanningProviderError,
+    ResolutionPlanningService,
+    ResolutionPlanningValidationError,
 )
 
 router = APIRouter(prefix="/reconciliation", tags=["reconciliation"])
@@ -140,3 +147,34 @@ def explain_exception_policy(
         exception_status=exc_row.status if exc_row else None,
         reconciliation_evidence=dict(exc_row.evidence or {}) if exc_row else {},
     )
+
+
+@router.post(
+    "/exceptions/{exception_id}/resolution-plan",
+    response_model=ResolutionPlanningResponse,
+)
+def create_exception_resolution_plan(
+    exception_id: UUID,
+    session: DbSession,
+    body: Annotated[ResolutionPlanCreateRequest | None, Body()] = None,
+) -> ResolutionPlanningResponse:
+    """AI resolution plan for an exception (proposes only — never executes)."""
+    req = body or ResolutionPlanCreateRequest()
+    try:
+        return ResolutionPlanningService(session).create_resolution_plan(
+            exception_id,
+            force_replan=req.force_replan,
+            policy_grounding_result_id=req.policy_grounding_result_id,
+        )
+    except ResolutionPlanningNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ResolutionPlanningValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+    except ResolutionPlanningProviderError as exc:
+        code = status.HTTP_502_BAD_GATEWAY
+        if exc.code == "MISSING_API_KEY":
+            code = status.HTTP_503_SERVICE_UNAVAILABLE
+        raise HTTPException(status_code=code, detail=str(exc)) from exc
