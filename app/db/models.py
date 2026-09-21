@@ -1064,10 +1064,17 @@ class ActionApproval(Base):
     """Immutable human authorization decision for a ProposedAction.
 
     Historical decisions are never overwritten — append a new row instead.
+    Optional ``idempotency_key`` deduplicates safe retries of the same decision.
     """
 
     __tablename__ = "action_approvals"
-    __table_args__ = (Index("ix_action_approvals_proposed_action_id", "proposed_action_id"),)
+    __table_args__ = (
+        Index("ix_action_approvals_proposed_action_id", "proposed_action_id"),
+        UniqueConstraint(
+            "idempotency_key",
+            name="uq_action_approvals_idempotency_key",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     proposed_action_id: Mapped[uuid.UUID] = mapped_column(
@@ -1078,6 +1085,7 @@ class ActionApproval(Base):
     decision: Mapped[str] = mapped_column(String(32), nullable=False)
     reviewer: Mapped[str] = mapped_column(String(255), nullable=False)
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
     decided_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

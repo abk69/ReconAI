@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.domain.enums import (
     ActionType,
@@ -15,20 +15,61 @@ from app.domain.enums import (
     ProposedActionStatus,
     ResolutionPlanStatus,
 )
+from app.resolution.reviewer import InvalidReviewerError, validate_reviewer
 
 
 class ActionApprovalRequest(BaseModel):
+    """Approve a proposed action. Never executes.
+
+    ``comment`` is preferred; ``reason`` is accepted as a synonym for M8.1 clients.
+    Production auth will supply ``reviewer``; for now it is application-provided.
+    """
+
     model_config = ConfigDict(extra="forbid")
 
     reviewer: str = Field(min_length=1, max_length=255)
-    reason: str | None = None
+    comment: str | None = Field(default=None, max_length=4000)
+    reason: str | None = Field(default=None, max_length=4000)
+    idempotency_key: str | None = Field(default=None, min_length=1, max_length=128)
+
+    @field_validator("reviewer")
+    @classmethod
+    def _check_reviewer(cls, value: str) -> str:
+        try:
+            return validate_reviewer(value)
+        except InvalidReviewerError as exc:
+            raise ValueError(str(exc)) from exc
+
+    @model_validator(mode="after")
+    def _normalize_comment(self) -> ActionApprovalRequest:
+        if self.comment is None and self.reason is not None:
+            self.comment = self.reason
+        return self
 
 
 class ActionRejectRequest(BaseModel):
+    """Reject a proposed action. Never executes."""
+
     model_config = ConfigDict(extra="forbid")
 
     reviewer: str = Field(min_length=1, max_length=255)
-    reason: str | None = None
+    comment: str | None = Field(default=None, max_length=4000)
+    reason: str | None = Field(default=None, max_length=4000)
+    idempotency_key: str | None = Field(default=None, min_length=1, max_length=128)
+
+    @field_validator("reviewer")
+    @classmethod
+    def _check_reviewer(cls, value: str) -> str:
+        try:
+            return validate_reviewer(value)
+        except InvalidReviewerError as exc:
+            raise ValueError(str(exc)) from exc
+
+    @model_validator(mode="after")
+    def _normalize_comment(self) -> ActionRejectRequest:
+        if self.comment is None and self.reason is not None:
+            self.comment = self.reason
+        return self
 
 
 class ActionExecuteRequest(BaseModel):
@@ -55,6 +96,8 @@ class ProposedActionResponse(BaseModel):
 
 
 class ActionApprovalResponse(BaseModel):
+    """Legacy approval-row shape (still used for audit listing)."""
+
     model_config = ConfigDict(extra="forbid", from_attributes=True)
 
     id: UUID
@@ -64,6 +107,25 @@ class ActionApprovalResponse(BaseModel):
     reason: str | None = None
     decided_at: datetime
     created_at: datetime
+    idempotency_key: str | None = None
+
+
+class ActionDecisionResponse(BaseModel):
+    """M8.4 approval/rejection API response — decision only, never execution."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    plan_id: UUID
+    action_id: UUID
+    action_type: ActionType
+    action_status: ProposedActionStatus
+    plan_status: ResolutionPlanStatus
+    approval_id: UUID
+    decision: ApprovalDecision
+    reviewer: str
+    comment: str | None = None
+    decided_at: datetime
+    reused_existing: bool = False
 
 
 class ActionExecutionResponse(BaseModel):

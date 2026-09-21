@@ -37,6 +37,7 @@ from app.resolution.guardrails import (
     validate_execution,
 )
 from app.resolution.registry import ActionRegistry, build_default_registry
+from app.resolution.reviewer import InvalidReviewerError, validate_reviewer
 from app.resolution.transitions import (
     InvalidResolutionTransitionError,
     assert_action_transition,
@@ -125,11 +126,8 @@ class ResolutionService:
 
         for order, request in enumerate(parsed_actions):
             handler = self._registry.get(request.action_type)
-            requires_approval = (
-                handler.requires_approval
-                if request.requires_approval is None
-                else request.requires_approval
-            )
+            # Registry is authoritative — never trust client requires_approval.
+            requires_approval = handler.requires_approval
             if requires_approval:
                 requires_any_approval = True
             action = ProposedAction(
@@ -197,6 +195,8 @@ class ResolutionService:
         *,
         reviewer: str,
         reason: str | None = None,
+        comment: str | None = None,
+        idempotency_key: str | None = None,
         commit: bool = True,
     ) -> ActionApproval:
         """Record an APPROVED decision only — does not execute the action."""
@@ -205,7 +205,8 @@ class ResolutionService:
             action_id,
             decision=ApprovalDecision.APPROVED,
             reviewer=reviewer,
-            reason=reason,
+            reason=comment if comment is not None else reason,
+            idempotency_key=idempotency_key,
             commit=commit,
         )
 
@@ -216,6 +217,8 @@ class ResolutionService:
         *,
         reviewer: str,
         reason: str | None = None,
+        comment: str | None = None,
+        idempotency_key: str | None = None,
         commit: bool = True,
     ) -> ActionApproval:
         """Record a REJECTED decision only — does not execute the action."""
@@ -224,7 +227,8 @@ class ResolutionService:
             action_id,
             decision=ApprovalDecision.REJECTED,
             reviewer=reviewer,
-            reason=reason,
+            reason=comment if comment is not None else reason,
+            idempotency_key=idempotency_key,
             commit=commit,
         )
 
@@ -282,7 +286,7 @@ class ResolutionService:
 
         try:
             validate_action(action, plan=plan, registry=self._registry)
-            validate_approval(action, list(action.approvals))
+            validate_approval(action, list(action.approvals), registry=self._registry)
         except GuardrailError as exc:
             raise ResolutionValidationError(str(exc)) from exc
 
@@ -406,21 +410,46 @@ class ResolutionService:
         decision: ApprovalDecision,
         reviewer: str,
         reason: str | None,
+        idempotency_key: str | None,
         commit: bool,
     ) -> ActionApproval:
-        if not reviewer or not reviewer.strip():
-            raise ResolutionValidationError("reviewer is required.")
+        try:
+            reviewer_id = validate_reviewer(reviewer)
+        except InvalidReviewerError as exc:
+            raise ResolutionValidationError(str(exc)) from exc
+
+        key = idempotency_key.strip() if idempotency_key else None
+        if idempotency_key is not None and not key:
+            raise ResolutionValidationError("idempotency_key must not be blank.")
 
         plan = self.get_plan(plan_id)
         if ResolutionPlanStatus(plan.status) is ResolutionPlanStatus.CANCELLED:
             raise ResolutionValidationError("Cannot decide actions on a cancelled plan.")
 
         action = self.get_action(plan_id, action_id)
+
+        # Idempotent replay by key — same decision returns existing row.
+        if key:
+            existing_by_key = self._session.scalar(
+                select(ActionApproval).where(ActionApproval.idempotency_key == key)
+            )
+            if existing_by_key is not None:
+                if existing_by_key.proposed_action_id != action.id:
+                    raise ResolutionConflictError(
+                        f"idempotency_key is already used by a different action: {key}"
+                    )
+                if existing_by_key.decision != decision.value:
+                    raise ResolutionConflictError(
+                        "idempotency_key was previously used with a conflicting decision."
+                    )
+                return existing_by_key
+
         action_status = ProposedActionStatus(action.status)
         if action_status in {
             ProposedActionStatus.COMPLETED,
             ProposedActionStatus.EXECUTING,
             ProposedActionStatus.CANCELLED,
+            ProposedActionStatus.FAILED,
         }:
             raise ResolutionValidationError(
                 f"Cannot record approval for action in status {action_status.value}."
@@ -431,20 +460,62 @@ class ResolutionService:
             if decision is ApprovalDecision.APPROVED
             else ProposedActionStatus.REJECTED
         )
+
+        # Duplicate same decision without a key: return the latest matching row
+        # (idempotent). Do not append a conflicting second decision.
+        if action_status is target:
+            prior = [
+                a
+                for a in action.approvals
+                if a.decision == decision.value
+            ]
+            if prior:
+                return max(
+                    prior,
+                    key=lambda a: (
+                        a.created_at or datetime.min.replace(tzinfo=UTC),
+                        a.decided_at or datetime.min.replace(tzinfo=UTC),
+                        str(a.id),
+                    ),
+                )
+            # Status already matches but no audit row — fall through to create one.
+
         if action_status is not target:
-            assert_action_transition(action_status, target)
+            try:
+                assert_action_transition(action_status, target)
+            except InvalidResolutionTransitionError as exc:
+                raise ResolutionValidationError(str(exc)) from exc
+
         action.status = target.value
 
         now = datetime.now(UTC)
         approval = ActionApproval(
             proposed_action_id=action.id,
             decision=decision.value,
-            reviewer=reviewer.strip(),
+            reviewer=reviewer_id,
             reason=reason,
+            idempotency_key=key,
             decided_at=now,
         )
-        self._session.add(approval)
-        self._session.flush()
+        try:
+            with self._session.begin_nested():
+                self._session.add(approval)
+                self._session.flush()
+        except IntegrityError as exc:
+            if key:
+                existing = self._session.scalar(
+                    select(ActionApproval).where(ActionApproval.idempotency_key == key)
+                )
+                if existing is not None and existing.proposed_action_id == action.id:
+                    if existing.decision != decision.value:
+                        raise ResolutionConflictError(
+                            "idempotency_key was previously used with a conflicting decision."
+                        ) from exc
+                    return existing
+            raise ResolutionConflictError(
+                f"Duplicate approval idempotency_key: {key}"
+            ) from exc
+
         self._refresh_plan_after_decision(plan)
 
         if commit:
@@ -454,33 +525,52 @@ class ResolutionService:
         return approval
 
     def _refresh_plan_after_decision(self, plan: ResolutionPlan) -> None:
+        """Deterministic plan status from action statuses (M8.4 — never COMPLETED)."""
         actions = self.list_actions(plan.id)
         if not actions:
             return
-        statuses = {ProposedActionStatus(a.status) for a in actions}
-        plan_status = ResolutionPlanStatus(plan.status)
 
-        if all(s is ProposedActionStatus.REJECTED for s in statuses):
-            if plan_status not in {
-                ResolutionPlanStatus.REJECTED,
-                ResolutionPlanStatus.CANCELLED,
-            }:
-                if plan_status in {
-                    ResolutionPlanStatus.PROPOSED,
-                    ResolutionPlanStatus.APPROVAL_REQUIRED,
-                }:
-                    assert_plan_transition(plan_status, ResolutionPlanStatus.REJECTED)
-                plan.status = ResolutionPlanStatus.REJECTED.value
+        plan_status = ResolutionPlanStatus(plan.status)
+        if plan_status in {
+            ResolutionPlanStatus.CANCELLED,
+            ResolutionPlanStatus.COMPLETED,
+            ResolutionPlanStatus.EXECUTING,
+            ResolutionPlanStatus.NO_ACTION_RECOMMENDED,
+        }:
             return
 
-        if (
-            all(
-                s in {ProposedActionStatus.APPROVED, ProposedActionStatus.REJECTED}
-                for s in statuses
-            )
-            and any(s is ProposedActionStatus.APPROVED for s in statuses)
-            and plan_status is ResolutionPlanStatus.APPROVAL_REQUIRED
-        ):
+        statuses = [ProposedActionStatus(a.status) for a in actions]
+        has_pending = any(s is ProposedActionStatus.PENDING for s in statuses)
+        all_rejected = all(s is ProposedActionStatus.REJECTED for s in statuses)
+        any_approved = any(s is ProposedActionStatus.APPROVED for s in statuses)
+        any_rejected = any(s is ProposedActionStatus.REJECTED for s in statuses)
+
+        # Still waiting on human decisions for one or more actions.
+        if has_pending:
+            if plan_status is ResolutionPlanStatus.PROPOSED:
+                assert_plan_transition(plan_status, ResolutionPlanStatus.APPROVAL_REQUIRED)
+            if plan_status in {
+                ResolutionPlanStatus.PROPOSED,
+                ResolutionPlanStatus.APPROVAL_REQUIRED,
+            }:
+                plan.status = ResolutionPlanStatus.APPROVAL_REQUIRED.value
+            return
+
+        # Every action decided.
+        if all_rejected or (any_rejected and not any_approved):
+            if plan_status in {
+                ResolutionPlanStatus.PROPOSED,
+                ResolutionPlanStatus.APPROVAL_REQUIRED,
+            }:
+                assert_plan_transition(plan_status, ResolutionPlanStatus.REJECTED)
+            plan.status = ResolutionPlanStatus.REJECTED.value
+            return
+
+        # At least one approved; remaining are approved or rejected.
+        if any_approved and plan_status in {
+            ResolutionPlanStatus.APPROVAL_REQUIRED,
+            ResolutionPlanStatus.PROPOSED,
+        }:
             assert_plan_transition(plan_status, ResolutionPlanStatus.APPROVED)
             plan.status = ResolutionPlanStatus.APPROVED.value
 

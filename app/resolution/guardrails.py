@@ -68,12 +68,22 @@ def validate_action(
 def validate_approval(
     action: ProposedAction,
     approvals: list[ActionApproval],
+    *,
+    registry: ActionRegistry | None = None,
 ) -> None:
-    """Require an APPROVED record when the action requires approval."""
+    """Require an APPROVED record when the action definition requires approval.
+
+    The ActionRegistry (when provided) is authoritative for ``requires_approval``.
+    Client-supplied or stale flags on the row must not bypass the gate.
+    """
     if ProposedActionStatus(action.status) is ProposedActionStatus.REJECTED:
         raise GuardrailError("Rejected actions cannot be executed.")
 
-    if not action.requires_approval:
+    requires_approval = action.requires_approval
+    if registry is not None and registry.is_registered(action.action_type):
+        requires_approval = registry.get(action.action_type).requires_approval
+
+    if not requires_approval:
         return
 
     if ProposedActionStatus(action.status) is ProposedActionStatus.APPROVED:
@@ -97,7 +107,7 @@ def validate_approval(
         if latest.decision == ApprovalDecision.APPROVED.value:
             return
 
-    if action.requires_approval and not approved:
+    if requires_approval and not approved:
         raise GuardrailError(
             "Approval-required actions cannot execute without an APPROVED ActionApproval."
         )

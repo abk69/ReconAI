@@ -1,6 +1,7 @@
-"""Agentic resolution plan inspection and approval APIs (M8.1).
+"""Agentic resolution plan inspection and approval APIs (M8).
 
 Approval/reject endpoints record human decisions only — they never execute.
+M8.4 strengthens the human authorization boundary; execution remains separate.
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ from app.resolution.transitions import InvalidResolutionTransitionError
 from app.schemas.resolution import (
     ActionApprovalRequest,
     ActionApprovalResponse,
+    ActionDecisionResponse,
     ActionExecuteRequest,
     ActionExecutionListResponse,
     ActionExecutionResponse,
@@ -78,7 +80,7 @@ def _plan_response(plan: ResolutionPlan) -> ResolutionPlanResponse:
     )
 
 
-def _approval_response(row: ActionApproval) -> ActionApprovalResponse:
+def _approval_row_response(row: ActionApproval) -> ActionApprovalResponse:
     return ActionApprovalResponse(
         id=row.id,
         proposed_action_id=row.proposed_action_id,
@@ -87,6 +89,29 @@ def _approval_response(row: ActionApproval) -> ActionApprovalResponse:
         reason=row.reason,
         decided_at=row.decided_at,
         created_at=row.created_at,
+        idempotency_key=getattr(row, "idempotency_key", None),
+    )
+
+
+def _decision_response(
+    *,
+    plan: ResolutionPlan,
+    action: ProposedAction,
+    approval: ActionApproval,
+    reused_existing: bool = False,
+) -> ActionDecisionResponse:
+    return ActionDecisionResponse(
+        plan_id=plan.id,
+        action_id=action.id,
+        action_type=ActionType(action.action_type),
+        action_status=ProposedActionStatus(action.status),
+        plan_status=ResolutionPlanStatus(plan.status),
+        approval_id=approval.id,
+        decision=ApprovalDecision(approval.decision),
+        reviewer=approval.reviewer,
+        comment=approval.reason,
+        decided_at=approval.decided_at,
+        reused_existing=reused_existing,
     )
 
 
@@ -130,52 +155,80 @@ def list_resolution_actions(
 
 @router.post(
     "/{plan_id}/actions/{action_id}/approve",
-    response_model=ActionApprovalResponse,
+    response_model=ActionDecisionResponse,
 )
 def approve_resolution_action(
     plan_id: UUID,
     action_id: UUID,
     body: ActionApprovalRequest,
     session: DbSession,
-) -> ActionApprovalResponse:
+) -> ActionDecisionResponse:
+    """Record APPROVED — never executes the action."""
     service = ResolutionService(session)
     try:
+        action_before = service.get_action(plan_id, action_id)
+        prior_ids = {a.id for a in action_before.approvals}
         approval = service.approve_action(
             plan_id,
             action_id,
             reviewer=body.reviewer,
+            comment=body.comment,
             reason=body.reason,
+            idempotency_key=body.idempotency_key,
         )
+        plan = service.get_plan(plan_id)
+        action = service.get_action(plan_id, action_id)
     except ResolutionNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ResolutionConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except (ResolutionValidationError, InvalidResolutionTransitionError) as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    return _approval_response(approval)
+    return _decision_response(
+        plan=plan,
+        action=action,
+        approval=approval,
+        reused_existing=approval.id in prior_ids,
+    )
 
 
 @router.post(
     "/{plan_id}/actions/{action_id}/reject",
-    response_model=ActionApprovalResponse,
+    response_model=ActionDecisionResponse,
 )
 def reject_resolution_action(
     plan_id: UUID,
     action_id: UUID,
     body: ActionRejectRequest,
     session: DbSession,
-) -> ActionApprovalResponse:
+) -> ActionDecisionResponse:
+    """Record REJECTED — never executes the action."""
     service = ResolutionService(session)
     try:
+        action_before = service.get_action(plan_id, action_id)
+        prior_ids = {a.id for a in action_before.approvals}
         approval = service.reject_action(
             plan_id,
             action_id,
             reviewer=body.reviewer,
+            comment=body.comment,
             reason=body.reason,
+            idempotency_key=body.idempotency_key,
         )
+        plan = service.get_plan(plan_id)
+        action = service.get_action(plan_id, action_id)
     except ResolutionNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ResolutionConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except (ResolutionValidationError, InvalidResolutionTransitionError) as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    return _approval_response(approval)
+    return _decision_response(
+        plan=plan,
+        action=action,
+        approval=approval,
+        reused_existing=approval.id in prior_ids,
+    )
 
 
 @router.get("/{plan_id}/executions", response_model=ActionExecutionListResponse)

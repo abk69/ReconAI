@@ -30,6 +30,22 @@ Intelligent procurement reconciliation and exception-resolution platform.
 | M8.1 Agentic resolution architecture | Done |
 | M8.2 Tool registry + safe action handlers | Done |
 | M8.3 AI resolution planner | Done |
+| M8.4 Human approval gate | Done |
+
+## M8.4 — Human approval gate
+
+Humans authorize proposed actions. **Approval does not execute the action.**
+
+```bash
+POST /resolution-plans/{plan_id}/actions/{action_id}/approve
+POST /resolution-plans/{plan_id}/actions/{action_id}/reject
+```
+
+Body: `{ "reviewer": "...", "comment": "..." }`. Reviewer identity is
+application-supplied (auth integrates later). Duplicate decisions are
+idempotent. Execution remains a separate step.
+
+See [`docs/M8_AGENTIC_RESOLUTION.md`](docs/M8_AGENTIC_RESOLUTION.md).
 
 ## M8.3 — AI resolution planner
 

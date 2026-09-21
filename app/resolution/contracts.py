@@ -128,7 +128,11 @@ class EscalateToManagerParameters(ActionParameters):
 
 
 class ActionRequest(BaseModel):
-    """Discriminated action request — type selects the parameter schema."""
+    """Discriminated action request — type selects the parameter schema.
+
+    ``requires_approval`` on the request is ignored at persistence time; the
+    ActionRegistry handler definition is authoritative (M8.4).
+    """
 
     model_config = ConfigDict(extra="forbid")
 

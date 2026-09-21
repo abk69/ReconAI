@@ -284,8 +284,95 @@ Never executes or approves actions.
 pytest -m live_resolution_planner -q   # requires GEMINI_API_KEY
 ```
 
-## Later milestones (not M8.3)
+## Later milestones (not M8.4)
 
 - Gemini tool calling that executes (still must go through registry + approval)
 - External notifications for clarification / escalation
 - Optional carefully gated financial mutation actions behind stronger controls
+
+## M8.4 — Human Approval Gate
+
+**Approval does not execute the action.**
+
+```
+Gemini proposes
+  → application validates (registry + typed contracts)
+  → human approves / rejects   ← M8.4 authorization boundary
+  → executor may execute       ← M8.5 (separate step)
+```
+
+The human reviewer is the authorization boundary. Gemini may propose; the
+application validates; **only an authorized human decision unlocks execution**.
+
+### Reviewer identity
+
+`reviewer` is a controlled application-supplied identity string (email-like or
+service account id). It is validated for presence, length, and safe characters.
+It is **not** executable data.
+
+Production authentication/authorization will integrate here later — M8.4 does
+not implement a fake auth system. Callers must supply a verified reviewer
+identifier from the application layer.
+
+### State machine (actions)
+
+```
+PENDING → APPROVED → EXECUTING → COMPLETED
+PENDING → REJECTED
+```
+
+Forbidden without an explicit new-review workflow:
+
+- `REJECTED → APPROVED`
+- `COMPLETED → APPROVED`
+- `EXECUTING → APPROVED` / approval after execution has begun
+
+### Plan status (M8.4)
+
+| Condition | Plan status |
+| --- | --- |
+| Any approval-required action still `PENDING` | `APPROVAL_REQUIRED` |
+| All actions decided and at least one `APPROVED` | `APPROVED` |
+| All actions `REJECTED` | `REJECTED` |
+| Execution / completion | M8.5 — not set by approval |
+
+Multi-action example: Action 1 approved, Action 2 still pending → plan remains
+`APPROVAL_REQUIRED`. Both approved → `APPROVED`. Neither is executed by the
+approval endpoints.
+
+### Duplicate decisions
+
+- Same decision again (approve after approve, reject after reject) is
+  **idempotent**: returns the existing `ActionApproval` row; does not append a
+  conflicting duplicate.
+- Optional `idempotency_key` on approve/reject: same key + same decision
+  returns the same row; same key + conflicting decision → `409`.
+- Approval history remains append-only for distinct workflow events; rows are
+  never overwritten or deleted.
+
+### API
+
+```bash
+POST /resolution-plans/{plan_id}/actions/{action_id}/approve
+POST /resolution-plans/{plan_id}/actions/{action_id}/reject
+```
+
+Body:
+
+```json
+{
+  "reviewer": "reviewer@example.com",
+  "comment": "Reviewed exception and supporting evidence.",
+  "idempotency_key": "optional-stable-key"
+}
+```
+
+(`reason` is accepted as a synonym for `comment`.)
+
+Response includes `plan_id`, `action_id`, `action_type`, `action_status`,
+`plan_status`, `approval_id`, `decision`, `reviewer`, `comment`, `decided_at`.
+
+### Registry-authoritative approval policy
+
+`requires_approval` comes from the registered handler definition. Client-supplied
+flags and direct row mutations cannot bypass the execution guard.
