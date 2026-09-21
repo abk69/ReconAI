@@ -31,6 +31,20 @@ Intelligent procurement reconciliation and exception-resolution platform.
 | M8.2 Tool registry + safe action handlers | Done |
 | M8.3 AI resolution planner | Done |
 | M8.4 Human approval gate | Done |
+| M8.5 Controlled action execution | Done |
+
+## M8.5 — Controlled action execution
+
+Deterministic registry dispatch after human approval. **LLM never executes.**
+
+```bash
+POST /resolution-plans/{plan_id}/actions/{action_id}/execute
+```
+
+Body: `{ "idempotency_key": "..." }`. Guardrails + savepoint + idempotency.
+Workflow records only — no financial mutation.
+
+See [`docs/M8_AGENTIC_RESOLUTION.md`](docs/M8_AGENTIC_RESOLUTION.md).
 
 ## M8.4 — Human approval gate
 

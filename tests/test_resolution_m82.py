@@ -488,6 +488,7 @@ def test_different_key_after_success_blocked(db_session: Session) -> None:
 def test_failed_execution_retry(db_session: Session) -> None:
     exc = _seed_exception(db_session)
     service = ResolutionService(db_session)
+    missing_vendor_id = uuid4()
     plan = service.create_plan(
         reconciliation_exception_id=exc.id,
         actions=[
@@ -495,7 +496,7 @@ def test_failed_execution_retry(db_session: Session) -> None:
                 "action_type": ActionType.REQUEST_VENDOR_CLARIFICATION,
                 "parameters": {
                     "question": "Why?",
-                    "vendor_id": str(uuid4()),  # nonexistent → handler failure
+                    "vendor_id": str(missing_vendor_id),  # nonexistent → handler failure
                 },
             }
         ],
@@ -509,13 +510,14 @@ def test_failed_execution_retry(db_session: Session) -> None:
     assert action.status == ProposedActionStatus.FAILED.value
     assert db_session.scalar(select(func.count()).select_from(VendorClarificationRequest)) == 0
 
-    # Fix parameters conceptually by creating a new plan action with valid vendor —
-    # for retry of same action we need vendor to exist; update stored params.
-    vendor = _seed_vendor(db_session)
-    action.parameters = {
-        "question": "Why?",
-        "vendor_id": str(vendor.id),
-    }
+    # Retry with the same approved parameters after the referenced vendor exists.
+    # Parameters remain immutable post-approval — do not mutate the action row.
+    vendor = Vendor(
+        id=missing_vendor_id,
+        name="Acme Supplies",
+        tax_id=f"TAX-{uuid4().hex[:8]}",
+    )
+    db_session.add(vendor)
     db_session.flush()
 
     retry = service.execute_action(plan.id, action.id, idempotency_key="fail-2")

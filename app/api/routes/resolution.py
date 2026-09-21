@@ -10,6 +10,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import ActionApproval, ActionExecution, ProposedAction, ResolutionPlan
@@ -27,12 +28,19 @@ from app.schemas.resolution import (
     ActionApprovalResponse,
     ActionDecisionResponse,
     ActionExecuteRequest,
+    ActionExecuteResponse,
     ActionExecutionListResponse,
     ActionExecutionResponse,
     ActionRejectRequest,
     ProposedActionListResponse,
     ProposedActionResponse,
     ResolutionPlanResponse,
+)
+from app.services.resolution_execution_service import (
+    ResolutionExecutionConflictError,
+    ResolutionExecutionNotFoundError,
+    ResolutionExecutionService,
+    ResolutionExecutionValidationError,
 )
 from app.services.resolution_service import (
     ResolutionConflictError,
@@ -55,6 +63,7 @@ def _action_response(action: ProposedAction) -> ProposedActionResponse:
         rationale=action.rationale,
         requires_approval=action.requires_approval,
         status=ProposedActionStatus(action.status),
+        approved_parameters_hash=getattr(action, "approved_parameters_hash", None),
         created_at=action.created_at,
         updated_at=action.updated_at,
     )
@@ -247,26 +256,63 @@ def list_resolution_executions(
 
 @router.post(
     "/{plan_id}/actions/{action_id}/execute",
-    response_model=ActionExecutionResponse,
+    response_model=ActionExecuteResponse,
 )
 def execute_resolution_action(
     plan_id: UUID,
     action_id: UUID,
     body: ActionExecuteRequest,
     session: DbSession,
-) -> ActionExecutionResponse:
-    """Execute an approved proposed action using stored parameters only."""
+) -> ActionExecuteResponse:
+    """Execute an approved proposed action using stored parameters only.
+
+    Never calls Gemini. Never accepts client overrides of type/parameters/status.
+    """
     service = ResolutionService(session)
+    executor = ResolutionExecutionService(session)
+    prior = session.scalar(
+        select(ActionExecution).where(ActionExecution.idempotency_key == body.idempotency_key)
+    )
+    prior_id = prior.id if prior is not None else None
+
     try:
-        execution = service.execute_action(
+        execution = executor.execute_action(
             plan_id,
             action_id,
             idempotency_key=body.idempotency_key,
         )
-    except ResolutionNotFoundError as exc:
+        plan = service.get_plan(plan_id)
+        action = service.get_action(plan_id, action_id)
+    except (
+        ResolutionNotFoundError,
+        ResolutionExecutionNotFoundError,
+    ) as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    except ResolutionConflictError as exc:
+    except (
+        ResolutionConflictError,
+        ResolutionExecutionConflictError,
+    ) as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    except (ResolutionValidationError, InvalidResolutionTransitionError) as exc:
+    except (
+        ResolutionValidationError,
+        ResolutionExecutionValidationError,
+        InvalidResolutionTransitionError,
+    ) as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    return _execution_response(execution)
+
+    return ActionExecuteResponse(
+        plan_id=plan.id,
+        action_id=action.id,
+        action_type=ActionType(action.action_type),
+        execution_id=execution.id,
+        execution_status=ExecutionStatus(execution.execution_status),
+        action_status=ProposedActionStatus(action.status),
+        plan_status=ResolutionPlanStatus(plan.status),
+        idempotency_key=execution.idempotency_key,
+        result=execution.result,
+        error_code=execution.error_code,
+        error_message=execution.error_message,
+        started_at=execution.started_at,
+        completed_at=execution.completed_at,
+        reused_existing=prior_id is not None and execution.id == prior_id,
+    )

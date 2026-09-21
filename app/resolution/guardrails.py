@@ -33,6 +33,15 @@ def _aware(dt: datetime | None) -> datetime:
     return dt
 
 
+_PRIOR_TERMINAL = frozenset(
+    {
+        ProposedActionStatus.COMPLETED,
+        ProposedActionStatus.REJECTED,
+        ProposedActionStatus.CANCELLED,
+    }
+)
+
+
 def validate_action(
     action: ProposedAction,
     *,
@@ -54,15 +63,47 @@ def validate_action(
         raise GuardrailError("Cancelled actions cannot be executed.")
     if action_status is ProposedActionStatus.COMPLETED:
         raise GuardrailError("Action has already completed.")
+    if action_status is ProposedActionStatus.EXECUTING:
+        raise GuardrailError("Action is already executing.")
 
     if not registry.is_registered(action.action_type):
         raise GuardrailError(f"Unknown or unregistered action type: {action.action_type}.")
+
+    handler = registry.get(action.action_type)
+    if handler.requires_approval and action_status is ProposedActionStatus.PENDING:
+        raise GuardrailError(
+            "Approval-required actions cannot execute from PENDING; "
+            "human approval is required first."
+        )
 
     raw_params = parameters if parameters is not None else (action.parameters or {})
     try:
         parse_action_parameters(action.action_type, raw_params)
     except Exception as exc:
         raise GuardrailError(f"Malformed action parameters: {exc}") from exc
+
+
+def validate_action_order(
+    action: ProposedAction,
+    siblings: list[ProposedAction],
+) -> None:
+    """Block executing action N while prior action_order items are unfinished.
+
+    Prior actions must be COMPLETED, REJECTED, or CANCELLED. FAILED priors must
+    be retried/resolved before later actions run. No autonomous multi-step loop.
+    """
+    for prior in siblings:
+        if prior.id == action.id:
+            continue
+        if prior.action_order >= action.action_order:
+            continue
+        prior_status = ProposedActionStatus(prior.status)
+        if prior_status not in _PRIOR_TERMINAL:
+            raise GuardrailError(
+                f"Cannot execute action_order={action.action_order} before "
+                f"prior action_order={prior.action_order} reaches a terminal "
+                f"state (current={prior_status.value})."
+            )
 
 
 def validate_approval(
@@ -150,5 +191,52 @@ def validate_execution(
             "Proposed action already has an active or successful execution; "
             "retry with the original idempotency_key."
         )
+
+    return None
+
+
+def aggregate_plan_status(
+    actions: list[ProposedAction],
+) -> ResolutionPlanStatus | None:
+    """Compute post-execution plan status from action rows.
+
+    Priority (first match wins):
+    1. any EXECUTING → EXECUTING
+    2. any PENDING → APPROVAL_REQUIRED
+    3. any FAILED → FAILED
+    4. all executable COMPLETED → COMPLETED
+    5. any APPROVED remaining → APPROVED
+    6. all REJECTED/CANCELLED → REJECTED
+    """
+    if not actions:
+        return None
+
+    statuses = [ProposedActionStatus(a.status) for a in actions]
+
+    if any(s is ProposedActionStatus.EXECUTING for s in statuses):
+        return ResolutionPlanStatus.EXECUTING
+
+    if any(s is ProposedActionStatus.PENDING for s in statuses):
+        return ResolutionPlanStatus.APPROVAL_REQUIRED
+
+    if any(s is ProposedActionStatus.FAILED for s in statuses):
+        return ResolutionPlanStatus.FAILED
+
+    executable = [
+        a
+        for a in actions
+        if ProposedActionStatus(a.status)
+        not in {ProposedActionStatus.REJECTED, ProposedActionStatus.CANCELLED}
+    ]
+    if not executable:
+        return ResolutionPlanStatus.REJECTED
+
+    if all(
+        ProposedActionStatus(a.status) is ProposedActionStatus.COMPLETED for a in executable
+    ):
+        return ResolutionPlanStatus.COMPLETED
+
+    if any(ProposedActionStatus(a.status) is ProposedActionStatus.APPROVED for a in executable):
+        return ResolutionPlanStatus.APPROVED
 
     return None

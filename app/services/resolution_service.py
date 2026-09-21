@@ -24,25 +24,23 @@ from app.db.models import (
 )
 from app.domain.enums import (
     ApprovalDecision,
-    ExecutionStatus,
     ProposedActionStatus,
     ResolutionPlanStatus,
 )
-from app.resolution.context import ActionExecutionContext
 from app.resolution.contracts import ActionRequest, parse_action_request
-from app.resolution.guardrails import (
-    GuardrailError,
-    validate_action,
-    validate_approval,
-    validate_execution,
-)
+from app.resolution.immutability import ensure_hash_on_approve
 from app.resolution.registry import ActionRegistry, build_default_registry
 from app.resolution.reviewer import InvalidReviewerError, validate_reviewer
 from app.resolution.transitions import (
     InvalidResolutionTransitionError,
     assert_action_transition,
-    assert_execution_transition,
     assert_plan_transition,
+)
+from app.services.resolution_execution_service import (
+    ResolutionExecutionConflictError,
+    ResolutionExecutionNotFoundError,
+    ResolutionExecutionService,
+    ResolutionExecutionValidationError,
 )
 
 
@@ -250,157 +248,25 @@ class ResolutionService:
         idempotency_key: str,
         commit: bool = True,
     ) -> ActionExecution:
-        """Execute a validated action via the registry (placeholder handlers in M8.1).
+        """Delegate to ResolutionExecutionService (M8.5).
 
         Never mutates PO/GRN/Invoice or reconciliation exception financial status.
+        Never calls Gemini.
         """
-        plan = self.get_plan(plan_id)
-        action = self.get_action(plan_id, action_id)
-        exception_before = self._session.get(
-            ReconciliationException, plan.reconciliation_exception_id
-        )
-        assert exception_before is not None
-        status_before = exception_before.status
-
-        # Idempotent replay must short-circuit before plan/action terminal checks.
-        existing_by_key = self._session.scalar(
-            select(ActionExecution).where(ActionExecution.idempotency_key == idempotency_key)
-        )
-        if existing_by_key is not None and existing_by_key.proposed_action_id == action.id:
-            return existing_by_key
-
-        existing_for_action = list(
-            self._session.scalars(
-                select(ActionExecution).where(ActionExecution.proposed_action_id == action.id)
-            ).all()
-        )
+        executor = ResolutionExecutionService(self._session, registry=self._registry)
         try:
-            validate_execution(
-                action,
+            return executor.execute_action(
+                plan_id,
+                action_id,
                 idempotency_key=idempotency_key,
-                existing_by_key=existing_by_key,
-                existing_for_action=existing_for_action,
+                commit=commit,
             )
-        except GuardrailError as exc:
+        except ResolutionExecutionNotFoundError as exc:
+            raise ResolutionNotFoundError(str(exc)) from exc
+        except ResolutionExecutionConflictError as exc:
+            raise ResolutionConflictError(str(exc)) from exc
+        except ResolutionExecutionValidationError as exc:
             raise ResolutionValidationError(str(exc)) from exc
-
-        try:
-            validate_action(action, plan=plan, registry=self._registry)
-            validate_approval(action, list(action.approvals), registry=self._registry)
-        except GuardrailError as exc:
-            raise ResolutionValidationError(str(exc)) from exc
-
-        now = datetime.now(UTC)
-        execution = ActionExecution(
-            proposed_action_id=action.id,
-            execution_status=ExecutionStatus.PENDING.value,
-            idempotency_key=idempotency_key,
-        )
-        try:
-            with self._session.begin_nested():
-                self._session.add(execution)
-                self._session.flush()
-        except IntegrityError as exc:
-            existing = self._session.scalar(
-                select(ActionExecution).where(
-                    ActionExecution.idempotency_key == idempotency_key
-                )
-            )
-            if existing is not None and existing.proposed_action_id == action.id:
-                return existing
-            raise ResolutionConflictError(
-                f"Duplicate idempotency_key: {idempotency_key}"
-            ) from exc
-
-        # Advance plan/action toward EXECUTING.
-        plan_status = ResolutionPlanStatus(plan.status)
-        if plan_status in {
-            ResolutionPlanStatus.APPROVED,
-            ResolutionPlanStatus.APPROVAL_REQUIRED,
-            ResolutionPlanStatus.FAILED,
-        }:
-            assert_plan_transition(plan_status, ResolutionPlanStatus.EXECUTING)
-            plan.status = ResolutionPlanStatus.EXECUTING.value
-        elif plan_status is not ResolutionPlanStatus.EXECUTING:
-            raise ResolutionValidationError(
-                f"Plan status {plan_status.value} cannot start execution."
-            )
-
-        action_status = ProposedActionStatus(action.status)
-        if action_status in {
-            ProposedActionStatus.APPROVED,
-            ProposedActionStatus.PENDING,
-            ProposedActionStatus.FAILED,
-        }:
-            assert_action_transition(action_status, ProposedActionStatus.EXECUTING)
-        else:
-            raise ResolutionValidationError(
-                f"Action status {action_status.value} cannot start execution."
-            )
-        action.status = ProposedActionStatus.EXECUTING.value
-
-        assert_execution_transition(ExecutionStatus.PENDING, ExecutionStatus.RUNNING)
-        execution.execution_status = ExecutionStatus.RUNNING.value
-        execution.started_at = now
-        self._session.flush()
-
-        try:
-            handler = self._registry.get(action.action_type)
-            typed = handler.validate_parameters(dict(action.parameters or {}))
-            ctx = ActionExecutionContext(
-                session=self._session,
-                plan=plan,
-                action=action,
-                exception=exception_before,
-                idempotency_key=idempotency_key,
-            )
-            # Nested savepoint: handler side effects roll back on failure while
-            # the ActionExecution FAILED audit row is preserved.
-            with self._session.begin_nested():
-                result = handler.execute(typed, ctx)
-            assert_execution_transition(ExecutionStatus.RUNNING, ExecutionStatus.SUCCEEDED)
-            execution.execution_status = ExecutionStatus.SUCCEEDED.value
-            execution.completed_at = datetime.now(UTC)
-            execution.result = result.model_dump(mode="json")
-            assert_action_transition(
-                ProposedActionStatus.EXECUTING, ProposedActionStatus.COMPLETED
-            )
-            action.status = ProposedActionStatus.COMPLETED.value
-        except Exception as exc:  # noqa: BLE001 — record failure, re-raise typed
-            assert_execution_transition(ExecutionStatus.RUNNING, ExecutionStatus.FAILED)
-            execution.execution_status = ExecutionStatus.FAILED.value
-            execution.completed_at = datetime.now(UTC)
-            execution.error_code = type(exc).__name__
-            execution.error_message = str(exc)
-            execution.result = {
-                "success": False,
-                "status": "failed",
-                "message": str(exc),
-                "error_code": type(exc).__name__,
-            }
-            assert_action_transition(
-                ProposedActionStatus.EXECUTING, ProposedActionStatus.FAILED
-            )
-            action.status = ProposedActionStatus.FAILED.value
-            plan.status = ResolutionPlanStatus.FAILED.value
-            if commit:
-                self._session.commit()
-            else:
-                self._session.flush()
-            raise ResolutionValidationError(f"Action execution failed: {exc}") from exc
-
-        self._refresh_plan_completion(plan)
-
-        # Invariant: M2 exception status is never changed by resolution execution.
-        self._session.refresh(exception_before)
-        if exception_before.status != status_before:
-            exception_before.status = status_before
-
-        if commit:
-            self._session.commit()
-            return self._session.get(ActionExecution, execution.id)  # type: ignore[return-value]
-        self._session.flush()
-        return execution
 
     def _record_decision(
         self,
@@ -487,6 +353,8 @@ class ResolutionService:
                 raise ResolutionValidationError(str(exc)) from exc
 
         action.status = target.value
+        if decision is ApprovalDecision.APPROVED:
+            ensure_hash_on_approve(action)
 
         now = datetime.now(UTC)
         approval = ActionApproval(
@@ -575,22 +443,24 @@ class ResolutionService:
             plan.status = ResolutionPlanStatus.APPROVED.value
 
     def _refresh_plan_completion(self, plan: ResolutionPlan) -> None:
+        """Legacy hook — execution path uses ResolutionExecutionService aggregation."""
+        from app.resolution.guardrails import aggregate_plan_status
+
         actions = self.list_actions(plan.id)
-        executable = [
-            a
-            for a in actions
-            if ProposedActionStatus(a.status) is not ProposedActionStatus.REJECTED
-        ]
-        if not executable:
+        desired = aggregate_plan_status(actions)
+        if desired is None:
             return
-        if all(
-            ProposedActionStatus(a.status) is ProposedActionStatus.COMPLETED
-            for a in executable
-        ):
-            plan_status = ResolutionPlanStatus(plan.status)
-            if plan_status is ResolutionPlanStatus.EXECUTING:
-                assert_plan_transition(plan_status, ResolutionPlanStatus.COMPLETED)
-                plan.status = ResolutionPlanStatus.COMPLETED.value
+        current = ResolutionPlanStatus(plan.status)
+        if current is desired:
+            return
+        if current in {
+            ResolutionPlanStatus.CANCELLED,
+            ResolutionPlanStatus.COMPLETED,
+            ResolutionPlanStatus.NO_ACTION_RECOMMENDED,
+        }:
+            return
+        assert_plan_transition(current, desired)
+        plan.status = desired.value
 
 
 # Re-export for callers that want service-local access.

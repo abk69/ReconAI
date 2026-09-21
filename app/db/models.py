@@ -1030,6 +1030,7 @@ class ProposedAction(Base):
     parameters: Mapped[dict[str, Any]] = mapped_column(JsonDocument, nullable=False, default=dict)
     rationale: Mapped[str] = mapped_column(Text, nullable=False, default="")
     requires_approval: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    approved_parameters_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     status: Mapped[str] = mapped_column(
         String(32),
         nullable=False,

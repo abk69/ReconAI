@@ -91,6 +91,7 @@ class ProposedActionResponse(BaseModel):
     rationale: str
     requires_approval: bool
     status: ProposedActionStatus
+    approved_parameters_hash: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -141,6 +142,27 @@ class ActionExecutionResponse(BaseModel):
     error_code: str | None = None
     error_message: str | None = None
     created_at: datetime
+
+
+class ActionExecuteResponse(BaseModel):
+    """M8.5 execute API response — structured result, never LLM-driven."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    plan_id: UUID
+    action_id: UUID
+    action_type: ActionType
+    execution_id: UUID
+    execution_status: ExecutionStatus
+    action_status: ProposedActionStatus
+    plan_status: ResolutionPlanStatus
+    idempotency_key: str
+    result: dict[str, Any] | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    reused_existing: bool = False
 
 
 class ResolutionPlanResponse(BaseModel):

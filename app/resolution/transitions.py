@@ -32,10 +32,20 @@ PLAN_ALLOWED_TRANSITIONS: dict[ResolutionPlanStatus, frozenset[ResolutionPlanSta
             ResolutionPlanStatus.COMPLETED,
             ResolutionPlanStatus.FAILED,
             ResolutionPlanStatus.CANCELLED,
+            # Partial multi-action: remaining approved / still needing approval.
+            ResolutionPlanStatus.APPROVED,
+            ResolutionPlanStatus.APPROVAL_REQUIRED,
         }
     ),
-    # Allow retry after a failed execution attempt.
-    ResolutionPlanStatus.FAILED: frozenset({ResolutionPlanStatus.EXECUTING}),
+    # Allow retry after a failed execution attempt; success may return to APPROVED.
+    ResolutionPlanStatus.FAILED: frozenset(
+        {
+            ResolutionPlanStatus.EXECUTING,
+            ResolutionPlanStatus.APPROVED,
+            ResolutionPlanStatus.APPROVAL_REQUIRED,
+            ResolutionPlanStatus.COMPLETED,
+        }
+    ),
     ResolutionPlanStatus.REJECTED: frozenset(),
     ResolutionPlanStatus.COMPLETED: frozenset(),
     ResolutionPlanStatus.CANCELLED: frozenset(),

@@ -284,11 +284,121 @@ Never executes or approves actions.
 pytest -m live_resolution_planner -q   # requires GEMINI_API_KEY
 ```
 
-## Later milestones (not M8.4)
+## Later milestones (not M8.5)
 
 - Gemini tool calling that executes (still must go through registry + approval)
 - External notifications for clarification / escalation
 - Optional carefully gated financial mutation actions behind stronger controls
+- Autonomous multi-step execution loops
+
+## M8.5 — Controlled Execution
+
+```
+LLM proposes
+  → application validates
+  → human approves
+  → registry dispatches
+  → typed handler executes
+  → structured result recorded
+```
+
+**The LLM never executes.** Only an explicitly registered handler may run, and
+only after guardrails pass.
+
+### Execution service
+
+`ResolutionExecutionService` (`app/services/resolution_execution_service.py`):
+
+1. Lock / load `ProposedAction` (row `FOR UPDATE` on Postgres)
+2. Verify plan ownership, registry registration, typed parameters
+3. Enforce registry-authoritative approval requirement
+4. Enforce `action_order` (later actions wait for prior terminal states)
+5. Create `ActionExecution` (`RUNNING`) with unique `idempotency_key`
+6. Invoke handler inside a **SAVEPOINT**
+7. On success → `SUCCEEDED` / action `COMPLETED` / structured `result`
+8. On failure → roll back handler effects, keep `FAILED` audit row, structured error
+9. Recalculate plan status; never mutate M2 financial truth
+
+`ResolutionService.execute_action` delegates here for compatibility.
+
+### Guardrails (pre-handler)
+
+Plan exists · action belongs to plan · type registered · parameters valid ·
+not REJECTED/CANCELLED/COMPLETED/EXECUTING · plan not cancelled · approval
+present when required · latest decision APPROVED · no active/successful
+execution · valid idempotency key · prior `action_order` terminal.
+
+### Idempotency
+
+| Case | Behavior |
+| --- | --- |
+| Same key | Return existing `ActionExecution` (no second side effect) |
+| Different key after success | Reject |
+| Different key after failure | New attempt allowed (`FAILED → EXECUTING`) |
+| Concurrent same key | One successful workflow row (unique constraint + lock) |
+
+### Savepoint behavior
+
+Handler work runs in `begin_nested()`. Failure rolls back business inserts
+(e.g. clarification request) while the outer `ActionExecution` FAILED row
+commits for audit. Execution never stays stuck in `RUNNING`.
+
+### Action ordering
+
+The execute endpoint runs **one** explicit action. It will not start
+`action_order=N` while any prior action is still `PENDING`, `APPROVED`,
+`EXECUTING`, or `FAILED`. No autonomous multi-step loops.
+
+### Plan aggregation (post-execution)
+
+Priority:
+
+1. any `EXECUTING` → `EXECUTING`
+2. any `PENDING` → `APPROVAL_REQUIRED`
+3. any `FAILED` → `FAILED`
+4. all executable `COMPLETED` → `COMPLETED`
+5. any remaining `APPROVED` → `APPROVED`
+6. all `REJECTED`/`CANCELLED` → `REJECTED`
+
+Partial plans are never marked `COMPLETED`.
+
+### API
+
+```bash
+POST /resolution-plans/{plan_id}/actions/{action_id}/execute
+```
+
+Body: `{ "idempotency_key": "..." }` only. Clients cannot override type,
+parameters, approval flags, or statuses.
+
+Response includes `plan_id`, `action_id`, `action_type`, `execution_id`,
+`execution_status`, `action_status`, `plan_status`, `idempotency_key`,
+`result` / error fields.
+
+### Hard constraint
+
+M8.5 does **not** modify invoice/PO/GRN amounts, approve payments, delete
+transactions, or change reconciliation financial truth. Handlers create
+workflow records only.
+
+### Approved parameter immutability
+
+```
+ProposedAction (PENDING)
+  → human approval
+  → approved_parameters_hash = SHA-256(canonical JSON parameters)
+  → identity fields frozen (parameters, action_type, action_order, requires_approval)
+  → execution verifies hash matches current parameters
+```
+
+There is **no** public API to update `action_type`, `parameters`, `action_order`,
+or `requires_approval`. The ORM session `before_flush` guard rejects identity
+mutations once status leaves `PENDING` (including `APPROVED`, `REJECTED`,
+`FAILED`, `COMPLETED`, …).
+
+At approve time the application stores `approved_parameters_hash`. At execute
+time it recomputes the digest; mismatch → execution rejected. This evidences
+that **the action executed is exactly the action the human approved.**
 
 ## M8.4 — Human Approval Gate
 
