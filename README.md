@@ -33,6 +33,20 @@ Intelligent procurement reconciliation and exception-resolution platform.
 | M8.4 Human approval gate | Done |
 | M8.5 Controlled action execution | Done |
 | M8.6 Audit trail & observability | Done |
+| M8.7 Agent evaluation | Done |
+| **M8 Agentic resolution** | **Complete** |
+
+## M8.7 — Agent evaluation
+
+Offline deterministic harness (`FakeResolutionPlannerLLM`) scores planner
+safety and validity. Numbers are **harness correctness**, not Gemini quality.
+
+```bash
+python -m app.evaluation.m8_runner
+python -m app.evaluation.m8_runner --live   # optional, needs GEMINI_API_KEY
+```
+
+See [`docs/M8_AGENTIC_RESOLUTION.md`](docs/M8_AGENTIC_RESOLUTION.md).
 
 ## M8.6 — Audit trail & observability
 
@@ -246,10 +260,13 @@ pytest -m live_llm -q         # opt-in real Gemini extraction (needs GEMINI_API_
 pytest -m live_embedding -q   # opt-in real Gemini embeddings (needs GEMINI_API_KEY)
 pytest -m live_grounding -q   # opt-in grounded policy RAG (needs GEMINI_API_KEY)
 pytest -m live_rag_eval -q    # opt-in M7.5 live RAG smoke (needs GEMINI_API_KEY)
+pytest -m live_resolution_eval -q  # opt-in M8.7 live planner smoke (needs GEMINI_API_KEY)
 python -m app.evaluation.m6_runner
 python -m app.evaluation.m7_runner
+python -m app.evaluation.m8_runner
 python -m app.evaluation.m6_runner --live
 python -m app.evaluation.m7_runner --live
+python -m app.evaluation.m8_runner --live
 ```
 
 Behavior matrix for interviews: [`docs/M6_BEHAVIOR.md`](docs/M6_BEHAVIOR.md).

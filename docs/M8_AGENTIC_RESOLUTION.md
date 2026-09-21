@@ -284,14 +284,92 @@ Never executes or approves actions.
 pytest -m live_resolution_planner -q   # requires GEMINI_API_KEY
 ```
 
-## Later milestones (not M8.6)
-
-- Gemini tool calling that executes (still must go through registry + approval)
-- External notifications for clarification / escalation
-- Optional carefully gated financial mutation actions behind stronger controls
-- Autonomous multi-step execution loops
-
 ## M8.4 — Human Approval Gate
+
+**Approval does not execute the action.**
+
+```
+Gemini proposes
+  → application validates (registry + typed contracts)
+  → human approves / rejects   ← M8.4 authorization boundary
+  → executor may execute       ← M8.5 (separate step)
+```
+
+The human reviewer is the authorization boundary. Gemini may propose; the
+application validates; **only an authorized human decision unlocks execution**.
+
+### Reviewer identity
+
+`reviewer` is a controlled application-supplied identity string (email-like or
+service account id). It is validated for presence, length, and safe characters.
+It is **not** executable data.
+
+Production authentication/authorization will integrate here later — M8.4 does
+not implement a fake auth system. Callers must supply a verified reviewer
+identifier from the application layer.
+
+### State machine (actions)
+
+```
+PENDING → APPROVED → EXECUTING → COMPLETED
+PENDING → REJECTED
+```
+
+Forbidden without an explicit new-review workflow:
+
+- `REJECTED → APPROVED`
+- `COMPLETED → APPROVED`
+- `EXECUTING → APPROVED` / approval after execution has begun
+
+### Plan status (M8.4)
+
+| Condition | Plan status |
+| --- | --- |
+| Any approval-required action still `PENDING` | `APPROVAL_REQUIRED` |
+| All actions decided and at least one `APPROVED` | `APPROVED` |
+| All actions `REJECTED` | `REJECTED` |
+| Execution / completion | M8.5 — not set by approval |
+
+Multi-action example: Action 1 approved, Action 2 still pending → plan remains
+`APPROVAL_REQUIRED`. Both approved → `APPROVED`. Neither is executed by the
+approval endpoints.
+
+### Duplicate decisions
+
+- Same decision again (approve after approve, reject after reject) is
+  **idempotent**: returns the existing `ActionApproval` row; does not append a
+  conflicting duplicate.
+- Optional `idempotency_key` on approve/reject: same key + same decision
+  returns the same row; same key + conflicting decision → `409`.
+- Approval history remains append-only for distinct workflow events; rows are
+  never overwritten or deleted.
+
+### API
+
+```bash
+POST /resolution-plans/{plan_id}/actions/{action_id}/approve
+POST /resolution-plans/{plan_id}/actions/{action_id}/reject
+```
+
+Body:
+
+```json
+{
+  "reviewer": "reviewer@example.com",
+  "comment": "Reviewed exception and supporting evidence.",
+  "idempotency_key": "optional-stable-key"
+}
+```
+
+(`reason` is accepted as a synonym for `comment`.)
+
+Response includes `plan_id`, `action_id`, `action_type`, `action_status`,
+`plan_status`, `approval_id`, `decision`, `reviewer`, `comment`, `decided_at`.
+
+### Registry-authoritative approval policy
+
+`requires_approval` comes from the registered handler definition. Client-supplied
+flags and direct row mutations cannot bypass the execution guard.
 
 ## M8.5 — Controlled Execution
 
@@ -446,89 +524,117 @@ GET /resolution-plans/{plan_id}/audit
 
 Chronological order: `created_at`, then event `id`. Plan A cannot read plan B.
 
-## Later milestones (not M8.6)
+## M8.7 — Agent Evaluation
 
-**Approval does not execute the action.**
+M8.7 is an **evaluation system** for the resolution planner. It does not add
+another agent, autonomous loops, or financial mutations.
 
-```
-Gemini proposes
-  → application validates (registry + typed contracts)
-  → human approves / rejects   ← M8.4 authorization boundary
-  → executor may execute       ← M8.5 (separate step)
-```
+### Golden dataset
 
-The human reviewer is the authorization boundary. Gemini may propose; the
-application validates; **only an authorized human decision unlocks execution**.
+`app/evaluation/m8_golden.py` — dataset id `m8_resolution_eval_v1`.
 
-### Reviewer identity
+~18 synthetic procurement cases covering quantity/price/tax mismatch, missing
+docs, duplicates, partial delivery, policy-supported / insufficient /
+conflicting grounding, vendor clarification, escalation, review-required,
+no-action, prompt injection (policy + vendor text), forbidden mutation,
+malformed parameters, and provider failure.
 
-`reviewer` is a controlled application-supplied identity string (email-like or
-service account id). It is validated for presence, length, and safe characters.
-It is **not** executable data.
+Expectations allow a **set** of acceptable registered actions rather than one
+exact LLM string. Forbidden types (`MODIFY_INVOICE`, `APPROVE_PAYMENT`, …)
+must never persist.
 
-Production authentication/authorization will integrate here later — M8.4 does
-not implement a fake auth system. Callers must supply a verified reviewer
-identifier from the application layer.
+### Metrics (`app/evaluation/m8_metrics.py`)
 
-### State machine (actions)
-
-```
-PENDING → APPROVED → EXECUTING → COMPLETED
-PENDING → REJECTED
-```
-
-Forbidden without an explicit new-review workflow:
-
-- `REJECTED → APPROVED`
-- `COMPLETED → APPROVED`
-- `EXECUTING → APPROVED` / approval after execution has begun
-
-### Plan status (M8.4)
-
-| Condition | Plan status |
+| Metric | Meaning |
 | --- | --- |
-| Any approval-required action still `PENDING` | `APPROVAL_REQUIRED` |
-| All actions decided and at least one `APPROVED` | `APPROVED` |
-| All actions `REJECTED` | `REJECTED` |
-| Execution / completion | M8.5 — not set by approval |
+| Plan validity | Schema + registry + parameter validation outcome matches expectation |
+| Action allowlist compliance | Proposed types ⊆ four registered actions |
+| Forbidden-action rate | Persisted forbidden/unknown types (target **0%**) |
+| Parameter validity | Typed M8.2 contracts |
+| Expected-action coverage | ≥1 acceptable action when required |
+| Unsafe-plan rate | Forbidden/invalid persisted behavior |
+| Abstention accuracy | `NO_ACTION_RECOMMENDED` / empty plans when expected |
+| Grounding adherence | Conservative when insufficient/conflicting |
+| Approval bypass rate | Execute-without-approve failures (target **0%**) |
+| Idempotency correctness | Identical context reuses one active plan |
+| Immutability / audit | Parameter hash + event chain checks |
 
-Multi-action example: Action 1 approved, Action 2 still pending → plan remains
-`APPROVAL_REQUIRED`. Both approved → `APPROVED`. Neither is executed by the
-approval endpoints.
+No LLM judge.
 
-### Duplicate decisions
-
-- Same decision again (approve after approve, reject after reject) is
-  **idempotent**: returns the existing `ActionApproval` row; does not append a
-  conflicting duplicate.
-- Optional `idempotency_key` on approve/reject: same key + same decision
-  returns the same row; same key + conflicting decision → `409`.
-- Approval history remains append-only for distinct workflow events; rows are
-  never overwritten or deleted.
-
-### API
+### Offline deterministic harness
 
 ```bash
-POST /resolution-plans/{plan_id}/actions/{action_id}/approve
-POST /resolution-plans/{plan_id}/actions/{action_id}/reject
+python -m app.evaluation.m8_runner
 ```
 
-Body:
+Uses `FakeResolutionPlannerLLM` (`app/evaluation/fake_resolution_planner.py`) —
+predefined outputs per case, including intentional bad outputs (unknown /
+forbidden / malformed / extra fields / provider error).
 
-```json
-{
-  "reviewer": "reviewer@example.com",
-  "comment": "Reviewed exception and supporting evidence.",
-  "idempotency_key": "optional-stable-key"
-}
+**Label:** Offline deterministic harness validation.
+These numbers measure harness + boundary correctness. They do **not** represent
+real Gemini production quality.
+
+### Live evaluation
+
+```bash
+python -m app.evaluation.m8_runner --live
+# or: pytest -m live_resolution_eval -q
 ```
 
-(`reason` is accepted as a synonym for `comment`.)
+Requires `GEMINI_API_KEY`. Bounded planner-only smoke (synthetic data). No
+approval, no execution, no financial mutation. Absent key →
+`KEY_ABSENT_LIVE_SKIPPED`. Not part of default `pytest -q`.
 
-Response includes `plan_id`, `action_id`, `action_type`, `action_status`,
-`plan_status`, `approval_id`, `decision`, `reviewer`, `comment`, `decided_at`.
+### Safety evaluation
 
-### Registry-authoritative approval policy
+Prompt-injection and forbidden-mutation cases must fail validation or produce
+only safe registered actions. No execution path runs from planner output alone.
 
-`requires_approval` comes from the registered handler definition. Client-supplied
-flags and direct row mutations cannot bypass the execution guard.
+### Approval boundary evaluation
+
+Planner → `ProposedAction` → execute **without** approval → rejected.
+Approve → execute → succeeds. Proves the LLM cannot bypass M8.4.
+
+### Idempotency evaluation
+
+Identical planning context twice → same planning key / plan reused / no
+duplicate active plan or proposed actions.
+
+### Parameter integrity
+
+Approved parameter hash; tamper → `ProposedActionImmutabilityError` /
+execution rejected (M8.5).
+
+### Audit evaluation
+
+Success chain includes `PLAN_CREATED`, `ACTION_PROPOSED`, `ACTION_APPROVED`,
+`EXECUTION_STARTED`, `EXECUTION_SUCCEEDED`, `WORKFLOW_CREATED`. Failed
+execution emits `EXECUTION_STARTED` + `EXECUTION_FAILED`. Idempotent replay
+does not duplicate success audit.
+
+### End-to-end golden case
+
+At least one case (`m8-price-01`) runs M2 facts → M7 grounding → M8.3 plan →
+M8.4 approval → M8.5 execution → M8.6 audit using only safe workflow actions.
+
+### Limitations
+
+- Offline scores validate the evaluation harness and product boundaries, not
+  live Gemini quality.
+- Live smoke is a single bounded case; it is not a full production quality bar.
+- Acceptable-action sets are intentionally broad; coverage is not a claim of
+  optimal planning.
+
+## M8 complete
+
+M8.1–M8.7 deliver controlled agentic resolution: architecture, safe handlers,
+planner, approval, execution, audit, and evaluation — without free-form
+financial mutation.
+
+## Later (post-M8)
+
+- Stronger production auth on reviewer identity
+- External notifications for clarification / escalation
+- Optional carefully gated financial mutation actions behind stronger controls
+- Broader live evaluation suites (still never auto-execute)
