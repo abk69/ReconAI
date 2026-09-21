@@ -23,7 +23,12 @@ from app.db.models import (
     ResolutionPlan,
     ResolutionPlanningAttempt,
 )
-from app.domain.enums import ActionType, ResolutionPlanStatus
+from app.domain.enums import (
+    ActionType,
+    ResolutionAuditActorType,
+    ResolutionAuditEventType,
+    ResolutionPlanStatus,
+)
 from app.llm.base import LLMProvider, LLMProviderError
 from app.llm.resolution_planner import ResolutionPlanner
 from app.llm.resolution_prompts import PLANNER_VERSION, PROMPT_VERSION, build_planner_user_content
@@ -31,6 +36,7 @@ from app.llm.resolution_schemas import (
     ResolutionPlannerGeminiOutput,
     ResolutionPlanningResponse,
 )
+from app.resolution.audit import ResolutionAuditWriter
 from app.resolution.contracts import parse_action_parameters, parse_action_request
 from app.resolution.registry import ActionRegistry, build_default_registry
 from app.services.resolution_service import ResolutionService
@@ -162,7 +168,21 @@ class ResolutionPlanningService:
                 error_code=exc_err.code,
                 error_message=str(exc_err),
                 provider_metadata={"provider": "google"},
-                commit=commit,
+                commit=False,
+            )
+            ResolutionAuditWriter(self._session).record(
+                event_type=ResolutionAuditEventType.PLANNER_FAILED,
+                actor_type=ResolutionAuditActorType.LLM,
+                event_data={
+                    "exception_id": str(exception_id),
+                    "planning_key": planning_key,
+                    "planner_version": PLANNER_VERSION,
+                    "prompt_version": PROMPT_VERSION,
+                    "error_code": exc_err.code,
+                    "message": str(exc_err)[:2000],
+                    "latency_ms": latency_ms,
+                    "grounding_result_id": str(grounding_id) if grounding_id else None,
+                },
             )
             self._restore_exception_status(exc, original_status)
             if commit:
@@ -182,7 +202,22 @@ class ResolutionPlanningService:
                 error_code="SCHEMA_INVALID",
                 error_message=str(exc_err),
                 provider_metadata={"model": getattr(self._planner, "model", None)},
-                commit=commit,
+                commit=False,
+            )
+            ResolutionAuditWriter(self._session).record(
+                event_type=ResolutionAuditEventType.PLANNER_FAILED,
+                actor_type=ResolutionAuditActorType.LLM,
+                event_data={
+                    "exception_id": str(exception_id),
+                    "planning_key": planning_key,
+                    "planner_version": PLANNER_VERSION,
+                    "prompt_version": PROMPT_VERSION,
+                    "model": getattr(self._planner, "model", None),
+                    "error_code": "SCHEMA_INVALID",
+                    "message": str(exc_err)[:2000],
+                    "latency_ms": latency_ms,
+                    "grounding_result_id": str(grounding_id) if grounding_id else None,
+                },
             )
             self._restore_exception_status(exc, original_status)
             if commit:
@@ -207,7 +242,22 @@ class ResolutionPlanningService:
                     "model": llm_resp.model,
                     "raw_status": gemini_out.status,
                 },
-                commit=commit,
+                commit=False,
+            )
+            ResolutionAuditWriter(self._session).record(
+                event_type=ResolutionAuditEventType.PLANNER_FAILED,
+                actor_type=ResolutionAuditActorType.LLM,
+                event_data={
+                    "exception_id": str(exception_id),
+                    "planning_key": planning_key,
+                    "planner_version": PLANNER_VERSION,
+                    "prompt_version": PROMPT_VERSION,
+                    "model": llm_resp.model,
+                    "error_code": "ACTION_VALIDATION_FAILED",
+                    "message": str(exc_err)[:2000],
+                    "latency_ms": latency_ms,
+                    "grounding_result_id": str(grounding_id) if grounding_id else None,
+                },
             )
             self._restore_exception_status(exc, original_status)
             if commit:
@@ -295,6 +345,38 @@ class ResolutionPlanningService:
             )
             self._session.add(plan)
             self._session.flush()
+            audit = ResolutionAuditWriter(self._session)
+            audit.record(
+                event_type=ResolutionAuditEventType.PLAN_CREATED,
+                actor_type=ResolutionAuditActorType.SYSTEM,
+                resolution_plan_id=plan.id,
+                actor_id=plan.proposed_by,
+                event_data={
+                    "exception_id": str(exception_id),
+                    "planning_key": planning_key,
+                    "planner_version": PLANNER_VERSION,
+                    "prompt_version": PROMPT_VERSION,
+                    "model": model,
+                    "action_count": 0,
+                    "status": plan.status,
+                },
+            )
+            audit.record(
+                event_type=ResolutionAuditEventType.PLANNER_COMPLETED,
+                actor_type=ResolutionAuditActorType.LLM,
+                resolution_plan_id=plan.id,
+                actor_id=plan.proposed_by,
+                event_data={
+                    "planning_key": planning_key,
+                    "planner_version": PLANNER_VERSION,
+                    "prompt_version": PROMPT_VERSION,
+                    "model": model,
+                    "grounding_result_id": str(grounding_id) if grounding_id else None,
+                    "planning_status": gemini_out.status,
+                    "action_count": 0,
+                    "latency_ms": latency_ms,
+                },
+            )
             return plan
 
         plan = self._resolution.create_plan(
@@ -304,6 +386,7 @@ class ResolutionPlanningService:
             policy_grounding_result_id=grounding_id,
             actions=validated_actions,
             commit=False,
+            proposal_actor=ResolutionAuditActorType.LLM,
         )
         plan.planning_key = planning_key
         plan.planner_model = model
@@ -312,6 +395,22 @@ class ResolutionPlanningService:
         plan.planning_latency_ms = latency_ms
         plan.limitations = gemini_out.limitations
         self._session.flush()
+        ResolutionAuditWriter(self._session).record(
+            event_type=ResolutionAuditEventType.PLANNER_COMPLETED,
+            actor_type=ResolutionAuditActorType.LLM,
+            resolution_plan_id=plan.id,
+            actor_id=plan.proposed_by,
+            event_data={
+                "planning_key": planning_key,
+                "planner_version": PLANNER_VERSION,
+                "prompt_version": PROMPT_VERSION,
+                "model": model,
+                "grounding_result_id": str(grounding_id) if grounding_id else None,
+                "planning_status": gemini_out.status,
+                "action_count": len(validated_actions),
+                "latency_ms": latency_ms,
+            },
+        )
         return plan
 
     def _validate_proposed_actions(

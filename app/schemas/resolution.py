@@ -196,3 +196,24 @@ class ActionExecutionListResponse(BaseModel):
 
     items: list[ActionExecutionResponse]
     count: int
+
+
+class ResolutionAuditEventResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    event_type: str
+    actor_type: str
+    actor_id: str | None = None
+    proposed_action_id: UUID | None = None
+    action_execution_id: UUID | None = None
+    created_at: datetime
+    data: dict[str, Any] = Field(default_factory=dict)
+
+
+class ResolutionAuditTrailResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    plan_id: UUID
+    events: list[ResolutionAuditEventResponse] = Field(default_factory=list)
+    count: int

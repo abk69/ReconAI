@@ -34,7 +34,13 @@ from app.schemas.resolution import (
     ActionRejectRequest,
     ProposedActionListResponse,
     ProposedActionResponse,
+    ResolutionAuditEventResponse,
+    ResolutionAuditTrailResponse,
     ResolutionPlanResponse,
+)
+from app.services.resolution_audit_service import (
+    ResolutionAuditNotFoundError,
+    ResolutionAuditService,
 )
 from app.services.resolution_execution_service import (
     ResolutionExecutionConflictError,
@@ -252,6 +258,37 @@ def list_resolution_executions(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     responses = [_execution_response(e) for e in items]
     return ActionExecutionListResponse(items=responses, count=len(responses))
+
+
+@router.get("/{plan_id}/audit", response_model=ResolutionAuditTrailResponse)
+def get_resolution_plan_audit(
+    plan_id: UUID,
+    session: DbSession,
+) -> ResolutionAuditTrailResponse:
+    """Return chronological append-only audit events for one plan."""
+    service = ResolutionAuditService(session)
+    try:
+        events = service.get_plan_audit(plan_id)
+    except ResolutionAuditNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    responses = [
+        ResolutionAuditEventResponse(
+            id=row.id,
+            event_type=row.event_type,
+            actor_type=row.actor_type,
+            actor_id=row.actor_id,
+            proposed_action_id=row.proposed_action_id,
+            action_execution_id=row.action_execution_id,
+            created_at=row.created_at,
+            data=dict(row.event_data or {}),
+        )
+        for row in events
+    ]
+    return ResolutionAuditTrailResponse(
+        plan_id=plan_id,
+        events=responses,
+        count=len(responses),
+    )
 
 
 @router.post(

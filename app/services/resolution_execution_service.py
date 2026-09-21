@@ -25,8 +25,11 @@ from app.db.models import (
 from app.domain.enums import (
     ExecutionStatus,
     ProposedActionStatus,
+    ResolutionAuditActorType,
+    ResolutionAuditEventType,
     ResolutionPlanStatus,
 )
+from app.resolution.audit import ResolutionAuditWriter, parameters_hash
 from app.resolution.context import ActionExecutionContext
 from app.resolution.guardrails import (
     GuardrailError,
@@ -159,6 +162,25 @@ class ResolutionExecutionService:
                     approved_parameters_hash=getattr(action, "approved_parameters_hash", None),
                 )
         except (GuardrailError, ProposedActionImmutabilityError) as exc:
+            if isinstance(exc, ProposedActionImmutabilityError):
+                ResolutionAuditWriter(self._session).record(
+                    event_type=ResolutionAuditEventType.EXECUTION_FAILED,
+                    actor_type=ResolutionAuditActorType.SYSTEM,
+                    resolution_plan_id=plan.id,
+                    proposed_action_id=action.id,
+                    event_data={
+                        "error_code": "PARAMETERS_HASH_MISMATCH",
+                        "message": str(exc)[:2000],
+                        "approved_parameters_hash": getattr(
+                            action, "approved_parameters_hash", None
+                        ),
+                        "executed_parameters_hash": parameters_hash(
+                            dict(action.parameters or {})
+                        ),
+                    },
+                )
+                if commit:
+                    self._session.commit()
             raise ResolutionExecutionValidationError(str(exc)) from exc
 
         now = datetime.now(UTC)
@@ -183,6 +205,22 @@ class ResolutionExecutionService:
 
         self._advance_to_executing(plan, action, execution, now)
 
+        audit = ResolutionAuditWriter(self._session)
+        executed_hash = parameters_hash(dict(action.parameters or {}))
+        audit.record(
+            event_type=ResolutionAuditEventType.EXECUTION_STARTED,
+            actor_type=ResolutionAuditActorType.SYSTEM,
+            resolution_plan_id=plan.id,
+            proposed_action_id=action.id,
+            action_execution_id=execution.id,
+            event_data={
+                "idempotency_key": key,
+                "action_type": action.action_type,
+                "executed_parameters_hash": executed_hash,
+                "approved_parameters_hash": getattr(action, "approved_parameters_hash", None),
+            },
+        )
+
         try:
             handler = self._registry.get(action.action_type)
             typed = handler.validate_parameters(dict(action.parameters or {}))
@@ -204,16 +242,53 @@ class ResolutionExecutionService:
                 ProposedActionStatus.EXECUTING, ProposedActionStatus.COMPLETED
             )
             action.status = ProposedActionStatus.COMPLETED.value
+
+            workflow_event = (
+                ResolutionAuditEventType.WORKFLOW_REUSED
+                if result.status == "already_exists"
+                else ResolutionAuditEventType.WORKFLOW_CREATED
+            )
+            audit.record(
+                event_type=workflow_event,
+                actor_type=ResolutionAuditActorType.SYSTEM,
+                resolution_plan_id=plan.id,
+                proposed_action_id=action.id,
+                action_execution_id=execution.id,
+                event_data={
+                    "workflow_type": action.action_type,
+                    "reference_id": str(result.reference_id) if result.reference_id else None,
+                    "status": result.status,
+                    "message": result.message,
+                },
+            )
+            audit.record(
+                event_type=ResolutionAuditEventType.EXECUTION_SUCCEEDED,
+                actor_type=ResolutionAuditActorType.SYSTEM,
+                resolution_plan_id=plan.id,
+                proposed_action_id=action.id,
+                action_execution_id=execution.id,
+                event_data={
+                    "execution_id": str(execution.id),
+                    "result": execution.result,
+                    "reference_id": str(result.reference_id) if result.reference_id else None,
+                    "executed_parameters_hash": executed_hash,
+                    "approved_parameters_hash": getattr(
+                        action, "approved_parameters_hash", None
+                    ),
+                },
+            )
         except Exception as exc:  # noqa: BLE001 — record failure, re-raise typed
             assert_execution_transition(ExecutionStatus.RUNNING, ExecutionStatus.FAILED)
             execution.execution_status = ExecutionStatus.FAILED.value
             execution.completed_at = datetime.now(UTC)
             execution.error_code = type(exc).__name__
-            execution.error_message = str(exc)
+            # Persist a safe, bounded message (no secrets / unrestricted traces).
+            safe_message = str(exc)[:2000]
+            execution.error_message = safe_message
             execution.result = {
                 "success": False,
                 "status": "failed",
-                "message": str(exc),
+                "message": safe_message,
                 "error_code": type(exc).__name__,
             }
             assert_action_transition(
@@ -221,6 +296,19 @@ class ResolutionExecutionService:
             )
             action.status = ProposedActionStatus.FAILED.value
             self._apply_plan_status(plan, ResolutionPlanStatus.FAILED)
+            audit.record(
+                event_type=ResolutionAuditEventType.EXECUTION_FAILED,
+                actor_type=ResolutionAuditActorType.SYSTEM,
+                resolution_plan_id=plan.id,
+                proposed_action_id=action.id,
+                action_execution_id=execution.id,
+                event_data={
+                    "execution_id": str(execution.id),
+                    "error_code": type(exc).__name__,
+                    "message": safe_message,
+                    "executed_parameters_hash": executed_hash,
+                },
+            )
             self._restore_exception_status(exception_before, status_before)
             if commit:
                 self._session.commit()

@@ -256,6 +256,30 @@ class EscalationPriority(StrEnum):
     HIGH = "HIGH"
 
 
+class ResolutionAuditEventType(StrEnum):
+    """Append-only resolution lifecycle audit events (M8.6)."""
+
+    PLAN_CREATED = "PLAN_CREATED"
+    PLANNER_COMPLETED = "PLANNER_COMPLETED"
+    PLANNER_FAILED = "PLANNER_FAILED"
+    ACTION_PROPOSED = "ACTION_PROPOSED"
+    ACTION_APPROVED = "ACTION_APPROVED"
+    ACTION_REJECTED = "ACTION_REJECTED"
+    EXECUTION_STARTED = "EXECUTION_STARTED"
+    EXECUTION_SUCCEEDED = "EXECUTION_SUCCEEDED"
+    EXECUTION_FAILED = "EXECUTION_FAILED"
+    WORKFLOW_CREATED = "WORKFLOW_CREATED"
+    WORKFLOW_REUSED = "WORKFLOW_REUSED"
+
+
+class ResolutionAuditActorType(StrEnum):
+    """Who caused a resolution audit event."""
+
+    SYSTEM = "SYSTEM"
+    LLM = "LLM"
+    HUMAN = "HUMAN"
+
+
 class ExceptionReviewRouteStatus(StrEnum):
     """Status for exception → human-review routing records (M8.2)."""
 

@@ -284,12 +284,14 @@ Never executes or approves actions.
 pytest -m live_resolution_planner -q   # requires GEMINI_API_KEY
 ```
 
-## Later milestones (not M8.5)
+## Later milestones (not M8.6)
 
 - Gemini tool calling that executes (still must go through registry + approval)
 - External notifications for clarification / escalation
 - Optional carefully gated financial mutation actions behind stronger controls
 - Autonomous multi-step execution loops
+
+## M8.4 — Human Approval Gate
 
 ## M8.5 — Controlled Execution
 
@@ -400,7 +402,51 @@ At approve time the application stores `approved_parameters_hash`. At execute
 time it recomputes the digest; mismatch → execution rejected. This evidences
 that **the action executed is exactly the action the human approved.**
 
-## M8.4 — Human Approval Gate
+## M8.6 — Audit & Observability
+
+```
+Exception
+  → Plan
+  → Proposed Action
+  → Approval
+  → Execution
+  → Workflow Result
+  → Audit Events
+```
+
+Append-only `resolution_audit_events` reconstruct the lifecycle for auditors.
+
+### Event types
+
+`PLAN_CREATED` · `PLANNER_COMPLETED` · `PLANNER_FAILED` · `ACTION_PROPOSED` ·
+`ACTION_APPROVED` · `ACTION_REJECTED` · `EXECUTION_STARTED` ·
+`EXECUTION_SUCCEEDED` · `EXECUTION_FAILED` · `WORKFLOW_CREATED` ·
+`WORKFLOW_REUSED`
+
+Actors are explicit enums: `SYSTEM` · `LLM` · `HUMAN`.
+
+### Provenance
+
+Audit payloads include planner model/version/prompt version, grounding ID,
+planning key, and parameter hashes (`parameters_hash` / `approved_parameters_hash` /
+`executed_parameters_hash`). Secrets and API keys are stripped.
+
+### Transactional behavior
+
+Events commit with the business transaction. Handler savepoint rollback still
+persists `EXECUTION_FAILED`. Idempotent execution replay returns the prior
+result **without** duplicating success/workflow events. A real retry after
+failure creates a new `EXECUTION_STARTED` (+ outcome).
+
+### Query API
+
+```bash
+GET /resolution-plans/{plan_id}/audit
+```
+
+Chronological order: `created_at`, then event `id`. Plan A cannot read plan B.
+
+## Later milestones (not M8.6)
 
 **Approval does not execute the action.**
 

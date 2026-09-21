@@ -1140,6 +1140,48 @@ class ActionExecution(Base):
     proposed_action: Mapped[ProposedAction] = relationship(back_populates="executions")
 
 
+class ResolutionAuditEvent(Base):
+    """Append-only resolution lifecycle audit event (M8.6).
+
+    Rows are never updated or deleted by application services.
+    """
+
+    __tablename__ = "resolution_audit_events"
+    __table_args__ = (
+        Index("ix_resolution_audit_events_plan_id", "resolution_plan_id"),
+        Index("ix_resolution_audit_events_action_id", "proposed_action_id"),
+        Index("ix_resolution_audit_events_execution_id", "action_execution_id"),
+        Index("ix_resolution_audit_events_event_type", "event_type"),
+        Index("ix_resolution_audit_events_created_at", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    resolution_plan_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("resolution_plans.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    proposed_action_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("proposed_actions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    action_execution_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("action_executions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    actor_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    event_data: Mapped[dict[str, Any]] = mapped_column(JsonDocument, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+
 class ExceptionReviewRoute(Base):
     """Exception-scoped human-review routing record (M8.2 ROUTE_TO_REVIEW).
 
@@ -1376,6 +1418,7 @@ __all__ = [
     "ProposedAction",
     "ActionApproval",
     "ActionExecution",
+    "ResolutionAuditEvent",
     "ExceptionReviewRoute",
     "VendorClarificationRequest",
     "MissingDocumentRequest",

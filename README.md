@@ -32,6 +32,17 @@ Intelligent procurement reconciliation and exception-resolution platform.
 | M8.3 AI resolution planner | Done |
 | M8.4 Human approval gate | Done |
 | M8.5 Controlled action execution | Done |
+| M8.6 Audit trail & observability | Done |
+
+## M8.6 — Audit trail & observability
+
+Append-only lifecycle events reconstruct plan → approval → execution → workflow.
+
+```bash
+GET /resolution-plans/{plan_id}/audit
+```
+
+See [`docs/M8_AGENTIC_RESOLUTION.md`](docs/M8_AGENTIC_RESOLUTION.md).
 
 ## M8.5 — Controlled action execution
 

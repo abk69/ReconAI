@@ -25,8 +25,11 @@ from app.db.models import (
 from app.domain.enums import (
     ApprovalDecision,
     ProposedActionStatus,
+    ResolutionAuditActorType,
+    ResolutionAuditEventType,
     ResolutionPlanStatus,
 )
+from app.resolution.audit import ResolutionAuditWriter, parameters_hash
 from app.resolution.contracts import ActionRequest, parse_action_request
 from app.resolution.immutability import ensure_hash_on_approve
 from app.resolution.registry import ActionRegistry, build_default_registry
@@ -85,6 +88,7 @@ class ResolutionService:
         policy_grounding_result_id: UUID | None = None,
         actions: list[ActionRequest | dict[str, Any]] | None = None,
         commit: bool = True,
+        proposal_actor: ResolutionAuditActorType = ResolutionAuditActorType.SYSTEM,
     ) -> ResolutionPlan:
         """Persist a ResolutionPlan with ordered ProposedActions."""
         exc = self._session.get(ReconciliationException, reconciliation_exception_id)
@@ -122,6 +126,23 @@ class ResolutionService:
         self._session.add(plan)
         self._session.flush()
 
+        audit = ResolutionAuditWriter(self._session)
+        audit.record(
+            event_type=ResolutionAuditEventType.PLAN_CREATED,
+            actor_type=ResolutionAuditActorType.SYSTEM,
+            resolution_plan_id=plan.id,
+            actor_id=proposed_by,
+            event_data={
+                "exception_id": str(reconciliation_exception_id),
+                "policy_grounding_result_id": (
+                    str(policy_grounding_result_id) if policy_grounding_result_id else None
+                ),
+                "proposed_by": proposed_by,
+                "action_count": len(parsed_actions),
+            },
+        )
+
+        created_actions: list[ProposedAction] = []
         for order, request in enumerate(parsed_actions):
             handler = self._registry.get(request.action_type)
             # Registry is authoritative — never trust client requires_approval.
@@ -138,6 +159,23 @@ class ResolutionService:
                 status=ProposedActionStatus.PENDING.value,
             )
             self._session.add(action)
+            self._session.flush()
+            created_actions.append(action)
+            audit.record(
+                event_type=ResolutionAuditEventType.ACTION_PROPOSED,
+                actor_type=proposal_actor,
+                resolution_plan_id=plan.id,
+                proposed_action_id=action.id,
+                actor_id=proposed_by,
+                event_data={
+                    "action_type": action.action_type,
+                    "action_order": action.action_order,
+                    "parameters": dict(action.parameters or {}),
+                    "parameters_hash": parameters_hash(dict(action.parameters or {})),
+                    "rationale": action.rationale,
+                    "requires_approval": action.requires_approval,
+                },
+            )
 
         if requires_any_approval:
             plan.status = ResolutionPlanStatus.APPROVAL_REQUIRED.value
@@ -383,6 +421,27 @@ class ResolutionService:
             raise ResolutionConflictError(
                 f"Duplicate approval idempotency_key: {key}"
             ) from exc
+
+        audit = ResolutionAuditWriter(self._session)
+        event_type = (
+            ResolutionAuditEventType.ACTION_APPROVED
+            if decision is ApprovalDecision.APPROVED
+            else ResolutionAuditEventType.ACTION_REJECTED
+        )
+        audit.record(
+            event_type=event_type,
+            actor_type=ResolutionAuditActorType.HUMAN,
+            resolution_plan_id=plan.id,
+            proposed_action_id=action.id,
+            actor_id=reviewer_id,
+            event_data={
+                "decision": decision.value,
+                "approved_parameters_hash": getattr(action, "approved_parameters_hash", None),
+                "parameters_hash": parameters_hash(dict(action.parameters or {})),
+                "reviewer": reviewer_id,
+                "comment": reason,
+            },
+        )
 
         self._refresh_plan_after_decision(plan)
 
