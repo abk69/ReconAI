@@ -1198,6 +1198,11 @@ class AnomalySignalRecord(Base):
         Index("ix_anomaly_signals_anomaly_type", "anomaly_type"),
         Index("ix_anomaly_signals_severity", "severity"),
         Index("ix_anomaly_signals_detected_at", "detected_at"),
+        Index(
+            "ix_anomaly_signals_detected_at_id",
+            "detected_at",
+            "id",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -1233,6 +1238,57 @@ class AnomalySignalRecord(Base):
         DateTime(timezone=True),
         nullable=False,
         server_default=func.now(),
+    )
+
+
+class AnomalyScanJob(Base):
+    """Bounded, resumable anomaly batch scan job (M9.2).
+
+    Checkpoint stores the last successfully processed entity cursor.
+    Signals created before failure/cancel are retained.
+    """
+
+    __tablename__ = "anomaly_scan_jobs"
+    __table_args__ = (
+        Index("ix_anomaly_scan_jobs_status", "status"),
+        Index("ix_anomaly_scan_jobs_scan_type", "scan_type"),
+        Index("ix_anomaly_scan_jobs_requested_at", "requested_at"),
+        UniqueConstraint(
+            "scan_type",
+            "scan_key",
+            name="uq_anomaly_scan_jobs_type_key",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    scan_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="PENDING")
+    # Optional idempotency key; NULL means always create a new job.
+    # Unique with scan_type when provided (SQLite/Postgres treat NULLs as distinct).
+    scan_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    requested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Deterministic cursor: last processed entity id (optionally phase-prefixed for FULL).
+    last_cursor: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    processed_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    anomaly_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
     )
 
 

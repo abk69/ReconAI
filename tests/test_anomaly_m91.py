@@ -578,7 +578,9 @@ def test_api_detect_and_list(api_client: TestClient, db_session: Session) -> Non
         params={"vendor_id": str(vendor.id), "severity": "CRITICAL"},
     )
     assert list_resp.status_code == 200
-    assert isinstance(list_resp.json(), list)
+    payload = list_resp.json()
+    assert "items" in payload
+    assert isinstance(payload["items"], list)
 
 
 def test_api_detect_vendor_and_exception(api_client: TestClient, db_session: Session) -> None:

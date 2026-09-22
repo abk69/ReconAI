@@ -32,3 +32,30 @@ SEVERITY_SCORE: dict[AnomalySeverity, str] = {
     AnomalySeverity.HIGH: "0.75",
     AnomalySeverity.CRITICAL: "1.00",
 }
+
+
+class AnomalyScanType(StrEnum):
+    """Explicit batch scan scopes (M9.2). No arbitrary types."""
+
+    INVOICE = "INVOICE"
+    VENDOR = "VENDOR"
+    EXCEPTION = "EXCEPTION"
+    FULL = "FULL"
+
+
+class AnomalyScanStatus(StrEnum):
+    """Scan job lifecycle."""
+
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+
+
+class AnomalyTrendPeriod(StrEnum):
+    """Deterministic trend grouping."""
+
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"

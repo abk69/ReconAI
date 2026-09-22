@@ -184,12 +184,92 @@ Detection does not mutate PO / Invoice / GRN financial columns.
 - Duplicate detection depends on normalized invoice numbers across rows.
 - Vendor spike ignores currency FX and seasonality.
 - Repeated mismatch fingerprint is day-scoped for the lookback window end date.
-- No scheduled bulk scan yet (M9.2).
 - Signals are not automatically linked to M8 resolution plans.
+- No Celery/Redis workers — scans run via explicit `run_scan` / API `/run`.
 
-## Later (post M9.1)
+## M9.2 — Batch Detection & Analytics
 
-- Batch / scheduled detection
-- Richer baselines and cohort comparisons
-- Optional LLM narrative *after* deterministic facts (still not fraud verdicts)
-- UI triage queues for high/critical signals
+> **M9.2 provides deterministic procurement risk analytics; it does not determine fraud.**
+
+### Scan lifecycle
+
+```
+PENDING → RUNNING → COMPLETED
+PENDING → RUNNING → FAILED  → (resume) → PENDING → RUNNING → …
+PENDING / RUNNING → CANCELLED
+```
+
+API creates jobs as `PENDING`. Execution is explicit:
+
+```bash
+POST /anomalies/scans
+POST /anomalies/scans/{scan_id}/run
+POST /anomalies/scans/{scan_id}/resume
+POST /anomalies/scans/{scan_id}/cancel
+GET  /anomalies/scans/{scan_id}
+```
+
+Scan types (explicit only): `INVOICE` · `VENDOR` · `EXCEPTION` · `FULL`.
+
+`FULL` = invoice phase then vendor phase (cursor `invoice:<uuid>|DONE`, `vendor:…`).
+
+### Checkpointing & resumability
+
+Entities are processed in deterministic UUID ascending order, in batches of
+`ANOMALY_SCAN_BATCH_SIZE` (default 100). After each successful batch commit,
+`last_cursor` advances to the last processed id.
+
+On **database transaction failure**: the failed batch rolls back; the prior
+checkpoint is preserved; status → `FAILED`. `resume_scan` continues from
+`last_cursor` (does not restart from zero). Fingerprints keep signals idempotent.
+
+On **isolated entity/rule failure**: `error_count` increments, a short safe
+`error_message` is stored (no stack traces), and the batch continues.
+
+### Scan-key idempotency
+
+Optional `scan_key` with unique `(scan_type, scan_key)`:
+
+- Same key → return the existing job (any status).
+- No key → always create a new job.
+- Use keys like `daily-2026-09-22` to avoid accidental duplicate FULL jobs.
+
+### Cancellation
+
+Cancel stops future batches, preserves already-created signals and the
+checkpoint, and marks the job `CANCELLED`.
+
+### Analytics
+
+```bash
+GET /anomalies/summary
+GET /anomalies/vendors/{vendor_id}/summary
+GET /anomalies/trends?period=daily|weekly|monthly
+```
+
+SQL aggregations only. Vendor endpoint returns an **anomaly profile** /
+**risk-signal profile** — never a fraud score. `RiskSignalSummary` is severity
+counts + affected entity counts.
+
+### Pagination
+
+`GET /anomalies` uses keyset pagination:
+
+- order: `detected_at DESC, id DESC`
+- query: `limit`, `cursor`
+- invalid cursor → 422
+
+### Performance
+
+Indexes on scan job status/type/`requested_at`, anomaly `detected_at`+`id`
+(composite for cursor pages), plus M9.1 type/severity/vendor/invoice/PO indexes.
+Scanner fetches id batches then detects per entity; signal upserts remain
+fingerprint-idempotent.
+
+### Limitations (M9.2)
+
+- No background worker / scheduler yet.
+- `FULL` does not separately scan every exception row after invoices/vendors
+  (use `EXCEPTION` scan type for that).
+- Trend buckets do not invent empty periods.
+- Concurrent long scans share one DB session model — keep batch sizes bounded.

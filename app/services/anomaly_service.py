@@ -187,6 +187,7 @@ class AnomalyService:
         limit: int = 100,
         offset: int = 0,
     ) -> list[AnomalySignalRecord]:
+        """Offset list (M9.1 compat). Prefer ``list_anomalies_page`` for keyset pagination."""
         stmt: Select[tuple[AnomalySignalRecord]] = select(AnomalySignalRecord)
         if anomaly_type is not None:
             stmt = stmt.where(
@@ -209,11 +210,75 @@ class AnomalyService:
         if detected_to is not None:
             stmt = stmt.where(AnomalySignalRecord.detected_at <= detected_to)
         stmt = (
-            stmt.order_by(AnomalySignalRecord.detected_at.desc())
+            stmt.order_by(
+                AnomalySignalRecord.detected_at.desc(),
+                AnomalySignalRecord.id.desc(),
+            )
             .limit(min(max(limit, 1), 500))
             .offset(max(offset, 0))
         )
         return list(self._session.scalars(stmt).all())
+
+    def list_anomalies_page(
+        self,
+        *,
+        anomaly_type: AnomalyType | str | None = None,
+        severity: AnomalySeverity | str | None = None,
+        vendor_id: UUID | None = None,
+        invoice_id: UUID | None = None,
+        purchase_order_id: UUID | None = None,
+        detected_from: datetime | None = None,
+        detected_to: datetime | None = None,
+        limit: int = 100,
+        cursor: str | None = None,
+    ) -> tuple[list[AnomalySignalRecord], str | None]:
+        """Keyset pagination on ``(detected_at DESC, id DESC)`` → ``(rows, next_cursor)``."""
+        from app.anomaly.pagination import decode_anomaly_cursor, encode_anomaly_cursor
+
+        stmt: Select[tuple[AnomalySignalRecord]] = select(AnomalySignalRecord)
+        if anomaly_type is not None:
+            stmt = stmt.where(
+                AnomalySignalRecord.anomaly_type
+                == (anomaly_type.value if isinstance(anomaly_type, AnomalyType) else anomaly_type)
+            )
+        if severity is not None:
+            stmt = stmt.where(
+                AnomalySignalRecord.severity
+                == (severity.value if isinstance(severity, AnomalySeverity) else severity)
+            )
+        if vendor_id is not None:
+            stmt = stmt.where(AnomalySignalRecord.vendor_id == vendor_id)
+        if invoice_id is not None:
+            stmt = stmt.where(AnomalySignalRecord.invoice_id == invoice_id)
+        if purchase_order_id is not None:
+            stmt = stmt.where(AnomalySignalRecord.purchase_order_id == purchase_order_id)
+        if detected_from is not None:
+            stmt = stmt.where(AnomalySignalRecord.detected_at >= detected_from)
+        if detected_to is not None:
+            stmt = stmt.where(AnomalySignalRecord.detected_at <= detected_to)
+        if cursor:
+            detected_at, anomaly_id = decode_anomaly_cursor(cursor)
+            stmt = stmt.where(
+                (AnomalySignalRecord.detected_at < detected_at)
+                | (
+                    (AnomalySignalRecord.detected_at == detected_at)
+                    & (AnomalySignalRecord.id < anomaly_id)
+                )
+            )
+        page_size = min(max(limit, 1), 500)
+        stmt = stmt.order_by(
+            AnomalySignalRecord.detected_at.desc(),
+            AnomalySignalRecord.id.desc(),
+        ).limit(page_size + 1)
+        rows = list(self._session.scalars(stmt).all())
+        next_cursor = None
+        if len(rows) > page_size:
+            rows = rows[:page_size]
+            last = rows[-1]
+            next_cursor = encode_anomaly_cursor(
+                detected_at=last.detected_at, anomaly_id=last.id
+            )
+        return rows, next_cursor
 
     def _persist_signals(
         self, signals: list[AnomalySignal], *, commit: bool

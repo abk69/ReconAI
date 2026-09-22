@@ -88,6 +88,12 @@ class Settings(BaseSettings):
     timing_long_delay_days: int = Field(
         default=30, ge=1, description="PO→invoice delay days for TIMING_ANOMALY"
     )
+    anomaly_scan_batch_size: int = Field(
+        default=100,
+        ge=1,
+        le=1000,
+        description="Bounded batch size for M9.2 anomaly scans (ANOMALY_SCAN_BATCH_SIZE)",
+    )
 
     # Document intake (M3)
     storage_root: str = Field(

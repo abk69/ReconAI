@@ -37,6 +37,20 @@ Intelligent procurement reconciliation and exception-resolution platform.
 | M8.7 Agent evaluation | Done |
 | **M8 Agentic resolution** | **Complete** |
 | M9.1 Anomaly detection foundation | Done |
+| M9.2 Batch detection & analytics | Done |
+
+## M9.2 — Batch detection & analytics
+
+Bounded, resumable anomaly scans + SQL analytics (not fraud scores).
+
+```bash
+POST /anomalies/scans
+POST /anomalies/scans/{scan_id}/run
+GET  /anomalies/summary
+GET  /anomalies/trends?period=daily
+```
+
+See [`docs/M9_ANOMALY_INTELLIGENCE.md`](docs/M9_ANOMALY_INTELLIGENCE.md).
 
 ## M9.1 — Anomaly detection foundation
 
