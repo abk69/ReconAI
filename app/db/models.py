@@ -1182,6 +1182,60 @@ class ResolutionAuditEvent(Base):
     )
 
 
+class AnomalySignalRecord(Base):
+    """Persisted deterministic anomaly signal (M9.1).
+
+    Signals are explainable risk indicators — not fraud determinations.
+    Deduplicated by unique fingerprint.
+    """
+
+    __tablename__ = "anomaly_signals"
+    __table_args__ = (
+        UniqueConstraint("fingerprint", name="uq_anomaly_signals_fingerprint"),
+        Index("ix_anomaly_signals_vendor_id", "vendor_id"),
+        Index("ix_anomaly_signals_invoice_id", "invoice_id"),
+        Index("ix_anomaly_signals_purchase_order_id", "purchase_order_id"),
+        Index("ix_anomaly_signals_anomaly_type", "anomaly_type"),
+        Index("ix_anomaly_signals_severity", "severity"),
+        Index("ix_anomaly_signals_detected_at", "detected_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    anomaly_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    severity: Mapped[str] = mapped_column(String(32), nullable=False)
+    score: Mapped[Decimal] = mapped_column(Numeric(8, 4), nullable=False)
+    vendor_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("vendors.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    purchase_order_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("purchase_orders.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    invoice_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("invoices.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    grn_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("goods_receipts.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    explanation: Mapped[str] = mapped_column(Text, nullable=False)
+    evidence: Mapped[dict[str, Any]] = mapped_column(JsonDocument, nullable=False, default=dict)
+    fingerprint: Mapped[str] = mapped_column(String(128), nullable=False)
+    detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+
 class ExceptionReviewRoute(Base):
     """Exception-scoped human-review routing record (M8.2 ROUTE_TO_REVIEW).
 

@@ -41,6 +41,54 @@ class Settings(BaseSettings):
         description="Allowed tax-rate variance as a percentage (default 0%)",
     )
 
+    # Anomaly detection thresholds (M9.1) — Decimal-compatible strings / ints.
+    anomaly_price_low_pct: str = Field(default="5", description="PRICE_VARIANCE LOW ≥ %")
+    anomaly_price_medium_pct: str = Field(
+        default="10", description="PRICE_VARIANCE MEDIUM ≥ %"
+    )
+    anomaly_price_high_pct: str = Field(default="25", description="PRICE_VARIANCE HIGH ≥ %")
+    anomaly_price_critical_pct: str = Field(
+        default="50", description="PRICE_VARIANCE CRITICAL ≥ %"
+    )
+    anomaly_quantity_low_pct: str = Field(
+        default="5", description="QUANTITY_VARIANCE LOW ≥ %"
+    )
+    anomaly_quantity_medium_pct: str = Field(
+        default="10", description="QUANTITY_VARIANCE MEDIUM ≥ %"
+    )
+    anomaly_quantity_high_pct: str = Field(
+        default="25", description="QUANTITY_VARIANCE HIGH ≥ %"
+    )
+    anomaly_quantity_critical_pct: str = Field(
+        default="50", description="QUANTITY_VARIANCE CRITICAL ≥ %"
+    )
+    vendor_spike_min_history: int = Field(
+        default=3, ge=1, description="Min prior invoices for VENDOR_SPIKE"
+    )
+    vendor_spike_medium_ratio: str = Field(default="2", description="VENDOR_SPIKE MEDIUM ≥")
+    vendor_spike_high_ratio: str = Field(default="3", description="VENDOR_SPIKE HIGH ≥")
+    vendor_spike_critical_ratio: str = Field(
+        default="5", description="VENDOR_SPIKE CRITICAL ≥"
+    )
+    repeated_mismatch_min_history: int = Field(
+        default=5, ge=1, description="Min invoices for REPEATED_MISMATCH"
+    )
+    repeated_mismatch_medium_rate: str = Field(
+        default="0.30", description="REPEATED_MISMATCH MEDIUM ≥ rate"
+    )
+    repeated_mismatch_high_rate: str = Field(
+        default="0.50", description="REPEATED_MISMATCH HIGH ≥ rate"
+    )
+    repeated_mismatch_critical_rate: str = Field(
+        default="0.75", description="REPEATED_MISMATCH CRITICAL ≥ rate"
+    )
+    repeated_mismatch_window_days: int = Field(
+        default=90, ge=1, description="Lookback window for REPEATED_MISMATCH"
+    )
+    timing_long_delay_days: int = Field(
+        default=30, ge=1, description="PO→invoice delay days for TIMING_ANOMALY"
+    )
+
     # Document intake (M3)
     storage_root: str = Field(
         default="storage/documents",

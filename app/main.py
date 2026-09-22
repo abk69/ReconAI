@@ -3,6 +3,7 @@
 from fastapi import FastAPI
 
 from app.api.routes import (
+    anomalies,
     documents,
     goods_receipts,
     health,
@@ -36,6 +37,7 @@ def create_app() -> FastAPI:
     application.include_router(review.router, prefix=prefix)
     application.include_router(policies.router, prefix=prefix)
     application.include_router(resolution.router, prefix=prefix)
+    application.include_router(anomalies.router, prefix=prefix)
     application.include_router(vendors.router, prefix=prefix)
     application.include_router(purchase_orders.router, prefix=prefix)
     application.include_router(goods_receipts.router, prefix=prefix)

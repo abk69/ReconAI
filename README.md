@@ -9,7 +9,8 @@ Intelligent procurement reconciliation and exception-resolution platform.
 **Human review (M5) is the trust boundary between candidates and authoritative PO/GRN/Invoice data.**  
 **Gemini (M6) may assist extraction — it never writes financial truth.**  
 **Grounded policy RAG (M7.4) explains retrieved policy evidence — it never overrides M2.**  
-**Controlled agentic resolution (M8) may propose typed workflow actions — never freely mutate financial records.**
+**Controlled agentic resolution (M8) may propose typed workflow actions — never freely mutate financial records.**  
+**Anomaly intelligence (M9) emits explainable risk signals — never fraud determinations or financial mutations.**
 
 ## Milestones
 
@@ -35,6 +36,20 @@ Intelligent procurement reconciliation and exception-resolution platform.
 | M8.6 Audit trail & observability | Done |
 | M8.7 Agent evaluation | Done |
 | **M8 Agentic resolution** | **Complete** |
+| M9.1 Anomaly detection foundation | Done |
+
+## M9.1 — Anomaly detection foundation
+
+Deterministic procurement **anomaly signals** (not fraud determinations).
+No LLM. No financial mutation. No action execution.
+
+```bash
+POST /anomalies/detect/invoice/{invoice_id}
+POST /anomalies/detect/vendor/{vendor_id}
+GET  /anomalies
+```
+
+See [`docs/M9_ANOMALY_INTELLIGENCE.md`](docs/M9_ANOMALY_INTELLIGENCE.md).
 
 ## M8.7 — Agent evaluation
 
