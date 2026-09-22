@@ -273,3 +273,95 @@ fingerprint-idempotent.
   (use `EXCEPTION` scan type for that).
 - Trend buckets do not invent empty periods.
 - Concurrent long scans share one DB session model — keep batch sizes bounded.
+
+## M9.3 — Transparent Risk Scoring
+
+> **Risk score is a deterministic aggregation of observed anomaly signals.
+> It is not a probability of fraud and is not a fraud determination.**
+
+### Formula
+
+For each anomaly signal ``i`` of type ``T``, severity ``S``, age ``d`` days
+vs reference date ``as_of``:
+
+```
+raw_i = weight(T) × severity_mult(S) × recency_mult(d)
+```
+
+Group by type:
+
+```
+uncapped_T = Σ raw_i for type T
+capped_T   = min(uncapped_T, cap(T))
+aggregate  = Σ capped_T
+```
+
+Normalize to integer 0–100:
+
+```
+MAX   = Σ cap(T)          # default 180
+score = min(100, round_half_up(aggregate × 100 / MAX))
+```
+
+### Weights (defaults)
+
+| Type | Weight | Cap |
+| --- | --- | --- |
+| PRICE_VARIANCE | 15 | 30 |
+| QUANTITY_VARIANCE | 15 | 30 |
+| DUPLICATE_INVOICE | 25 | 40 |
+| TIMING_ANOMALY | 10 | 20 |
+| VENDOR_SPIKE | 20 | 30 |
+| REPEATED_MISMATCH | 20 | 30 |
+
+### Severity multipliers
+
+LOW 0.25 · MEDIUM 0.50 · HIGH 0.75 · CRITICAL 1.00
+
+### Recency (vs injected ``as_of``)
+
+| Age (days) | Multiplier |
+| --- | --- |
+| 0–30 | 1.00 |
+| 31–90 | 0.75 |
+| 91–180 | 0.50 |
+| >180 | 0.25 |
+
+### Risk bands (internal signal bands — not probabilities)
+
+| Score | Band |
+| --- | --- |
+| 0–24 | LOW |
+| 25–49 | MEDIUM |
+| 50–74 | HIGH |
+| 75–100 | CRITICAL |
+
+### Versioning & immutability
+
+- Version string: `m9.3-v1` (`RISK_SCORE_VERSION` / `risk_score_version`)
+- Persisted on every profile; formula changes should bump to `m9.3-v2`
+- Unique on `(entity_type, entity_id, score_version, as_of)`
+- Identical fingerprint → reuse row; never overwrite historical scores
+
+### API
+
+```bash
+GET /risk/vendors/{vendor_id}?as_of=YYYY-MM-DD
+GET /risk/invoices/{invoice_id}?as_of=YYYY-MM-DD
+GET /risk/purchase-orders/{purchase_order_id}?as_of=YYYY-MM-DD
+```
+
+Consumes **persisted** anomaly signals only (does not re-run detection rules).
+Responses include score, band, version, breakdown, and an explicit non-fraud note.
+
+`as_of` is a point-in-time reference date: only signals with
+`detected_at <= as_of` are included, and recency multipliers are computed
+against that same date. Recomputing with the same `as_of` + version + signal
+set reuses the fingerprint / row.
+
+### Limitations (M9.3)
+
+- No ML / Gemini / fraud probability.
+- Score depends on which anomaly signals exist — sparse data ⇒ low scores.
+- Vendor scoring uses all vendor-linked signals; invoice/PO use only direct links.
+- Caps and weights are configurable but defaults favor transparency over “tuning”.

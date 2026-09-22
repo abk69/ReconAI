@@ -1292,6 +1292,47 @@ class AnomalyScanJob(Base):
     )
 
 
+class RiskProfileRecord(Base):
+    """Immutable persisted risk profile (M9.3).
+
+    Deterministic aggregation of anomaly signals — not a fraud determination.
+    Historical rows are never overwritten; identical fingerprints are reused.
+    """
+
+    __tablename__ = "risk_profiles"
+    __table_args__ = (
+        UniqueConstraint("fingerprint", name="uq_risk_profiles_fingerprint"),
+        UniqueConstraint(
+            "entity_type",
+            "entity_id",
+            "score_version",
+            "as_of",
+            name="uq_risk_profiles_entity_version_as_of",
+        ),
+        Index("ix_risk_profiles_entity", "entity_type", "entity_id"),
+        Index("ix_risk_profiles_score_version", "score_version"),
+        Index("ix_risk_profiles_calculated_at", "calculated_at"),
+        Index("ix_risk_profiles_risk_band", "risk_band"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    entity_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    entity_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    score: Mapped[int] = mapped_column(Integer, nullable=False)
+    risk_band: Mapped[str] = mapped_column(String(32), nullable=False)
+    score_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    as_of: Mapped[date] = mapped_column(Date, nullable=False)
+    calculated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    signal_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    breakdown: Mapped[dict[str, Any]] = mapped_column(JsonDocument, nullable=False, default=dict)
+    fingerprint: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+
 class ExceptionReviewRoute(Base):
     """Exception-scoped human-review routing record (M8.2 ROUTE_TO_REVIEW).
 

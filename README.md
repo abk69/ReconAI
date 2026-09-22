@@ -38,6 +38,20 @@ Intelligent procurement reconciliation and exception-resolution platform.
 | **M8 Agentic resolution** | **Complete** |
 | M9.1 Anomaly detection foundation | Done |
 | M9.2 Batch detection & analytics | Done |
+| M9.3 Transparent risk scoring | Done |
+
+## M9.3 — Transparent risk scoring
+
+Deterministic 0–100 risk-signal bands from anomaly signals — **not fraud
+probabilities**. Explainable breakdown + versioned immutable profiles.
+
+```bash
+GET /risk/vendors/{vendor_id}
+GET /risk/invoices/{invoice_id}
+GET /risk/purchase-orders/{purchase_order_id}
+```
+
+See [`docs/M9_ANOMALY_INTELLIGENCE.md`](docs/M9_ANOMALY_INTELLIGENCE.md).
 
 ## M9.2 — Batch detection & analytics
 

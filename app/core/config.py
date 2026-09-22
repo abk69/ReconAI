@@ -95,6 +95,27 @@ class Settings(BaseSettings):
         description="Bounded batch size for M9.2 anomaly scans (ANOMALY_SCAN_BATCH_SIZE)",
     )
 
+    # Transparent risk scoring (M9.3) — Decimal-compatible strings where needed.
+    risk_score_version: str = Field(
+        default="m9.3-v1",
+        description="Persisted risk score formula version (RISK_SCORE_VERSION)",
+    )
+    risk_weight_price_variance: str = Field(default="15")
+    risk_weight_quantity_variance: str = Field(default="15")
+    risk_weight_duplicate_invoice: str = Field(default="25")
+    risk_weight_timing_anomaly: str = Field(default="10")
+    risk_weight_vendor_spike: str = Field(default="20")
+    risk_weight_repeated_mismatch: str = Field(default="20")
+    risk_cap_price_variance: str = Field(default="30")
+    risk_cap_quantity_variance: str = Field(default="30")
+    risk_cap_duplicate_invoice: str = Field(default="40")
+    risk_cap_timing_anomaly: str = Field(default="20")
+    risk_cap_vendor_spike: str = Field(default="30")
+    risk_cap_repeated_mismatch: str = Field(default="30")
+    risk_band_medium_min: int = Field(default=25, ge=0, le=100)
+    risk_band_high_min: int = Field(default=50, ge=0, le=100)
+    risk_band_critical_min: int = Field(default=75, ge=0, le=100)
+
     # Document intake (M3)
     storage_root: str = Field(
         default="storage/documents",
