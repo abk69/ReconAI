@@ -3,16 +3,18 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.schemas.procurement import GoodsReceiptCreateRequest, GoodsReceiptResponse
+from app.schemas.workspace import GoodsReceiptListItem, GoodsReceiptListResponse
 from app.services.procurement_service import (
     ProcurementNotFoundError,
     ProcurementService,
     ProcurementValidationError,
 )
+from app.services.workspace_query import list_goods_receipts
 
 router = APIRouter(prefix="/goods-receipts", tags=["goods-receipts"])
 DbSession = Annotated[Session, Depends(get_db)]
@@ -40,6 +42,31 @@ def create_goods_receipt(
             detail=str(exc),
         ) from exc
     return GoodsReceiptResponse.model_validate(grn)
+
+
+@router.get("", response_model=GoodsReceiptListResponse)
+def list_goods_receipts_route(
+    session: DbSession,
+    q: Annotated[str | None, Query(max_length=64)] = None,
+    grn_status: Annotated[str | None, Query(alias="status", max_length=32)] = None,
+    purchase_order_id: UUID | None = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> GoodsReceiptListResponse:
+    items, total = list_goods_receipts(
+        session,
+        q=q,
+        status=grn_status,
+        purchase_order_id=purchase_order_id,
+        limit=limit,
+        offset=offset,
+    )
+    return GoodsReceiptListResponse(
+        items=[GoodsReceiptListItem.model_validate(item) for item in items],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/{goods_receipt_id}", response_model=GoodsReceiptResponse)

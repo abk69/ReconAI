@@ -49,3 +49,4 @@ class DocumentListResponse(BaseModel):
 
     items: list[DocumentResponse] = Field(default_factory=list)
     count: int
+    total: int

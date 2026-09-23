@@ -20,11 +20,11 @@ export const navigation: NavSection[] = [
     id: "procurement",
     label: "Procurement",
     items: [
-      { label: "Documents", href: "/documents", available: false },
-      { label: "Purchase Orders", href: "/purchase-orders", available: false },
-      { label: "Goods Receipts", href: "/goods-receipts", available: false },
-      { label: "Invoices", href: "/invoices", available: false },
-      { label: "Reconciliation", href: "/reconciliation", available: false },
+      { label: "Documents", href: "/documents", available: true },
+      { label: "Purchase Orders", href: "/purchase-orders", available: true },
+      { label: "Goods Receipts", href: "/goods-receipts", available: true },
+      { label: "Invoices", href: "/invoices", available: true },
+      { label: "Reconciliation", href: "/reconciliation", available: true },
     ],
   },
   {

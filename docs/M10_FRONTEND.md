@@ -24,11 +24,11 @@ Below the `lg` breakpoint the sidebar collapses into a button-controlled navigat
 | --- | --- |
 | `/` | Redirects to `/dashboard` |
 | `/dashboard` | Executive dashboard from `GET /dashboard/summary` |
-| `/documents` | Coming later |
-| `/purchase-orders` | Coming later |
-| `/goods-receipts` | Coming later |
-| `/invoices` | Coming later |
-| `/reconciliation` | Coming later |
+| `/documents` | Document list and detail |
+| `/purchase-orders` | Purchase order list and detail |
+| `/goods-receipts` | Goods receipt list and detail |
+| `/invoices` | Invoice list and detail |
+| `/reconciliation` | Persisted reconciliation exceptions |
 | `/exceptions` | Coming later |
 | `/risk` | Coming later |
 | `/policies` | Coming later |
@@ -115,6 +115,37 @@ Document status, reconciliation exception status, and review status are persiste
 
 Frontend presentation must distinguish deterministic financial facts, anomaly/risk signals, policy-grounded explanations, and AI-assisted recommendations.
 
+## M10.3 — Procurement reconciliation workspace
+
+Lists and details read persisted records. The browser does not run reconciliation, sum line amounts into a new total, or call Gemini.
+
+### Endpoints
+
+| Method | Purpose |
+| --- | --- |
+| `GET /documents` | Existing list, plus optional `q`, `limit`, and `offset`. `total` is the filtered count. |
+| `GET /documents/{id}` | Existing detail |
+| `GET /purchase-orders` | New list. `q` matches PO number. `status`, `vendor_id`, `limit`, `offset` |
+| `GET /purchase-orders/{id}` | Existing detail, including stored lines |
+| `GET /goods-receipts` | New list. `q` matches GRN number. `purchase_order_id` filter |
+| `GET /goods-receipts/{id}` | Existing detail |
+| `GET /invoices` | New list. `q` matches invoice number. Stored `total_amount` is returned as stored |
+| `GET /invoices/{id}` | Existing detail |
+| `GET /vendors/{id}` | Existing vendor name lookup |
+| `GET /reconciliation/exceptions` | Persisted exceptions. Filters: `q` (invoice, PO, or GRN number), `status`, `severity`, `exception_type`, and foreign keys |
+| `GET /reconciliation/exceptions/{id}` | Exception message plus stored evidence |
+
+`counts_by_status` ignores the status filter so the summary chips stay stable while the table is filtered. Search is a case-insensitive contains match on identifiers, not fuzzy or AI search.
+
+Pagination is `limit`/`offset`. The UI keeps filters in the query string, so browser back returns to the same list.
+
+### Presentation
+
+Exception detail labels the message as a deterministic reconciliation fact and renders evidence fields as stored. Raw JSON is behind a disclosure. Policy explanation and resolution planning are not requested.
+
+Related purchase orders, goods receipts, invoices, and exceptions are linked only when the API returns those ids.
+
+Empty lists and “backend unavailable” stay separate. A zero total is an empty state.
 
 ## Commands
 

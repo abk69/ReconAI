@@ -3,16 +3,18 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.schemas.procurement import InvoiceCreateRequest, InvoiceResponse
+from app.schemas.workspace import InvoiceListItem, InvoiceListResponse
 from app.services.procurement_service import (
     ProcurementNotFoundError,
     ProcurementService,
     ProcurementValidationError,
 )
+from app.services.workspace_query import list_invoices
 
 router = APIRouter(prefix="/invoices", tags=["invoices"])
 DbSession = Annotated[Session, Depends(get_db)]
@@ -42,6 +44,33 @@ def create_invoice(body: InvoiceCreateRequest, session: DbSession) -> InvoiceRes
             detail=str(exc),
         ) from exc
     return InvoiceResponse.model_validate(invoice)
+
+
+@router.get("", response_model=InvoiceListResponse)
+def list_invoices_route(
+    session: DbSession,
+    q: Annotated[str | None, Query(max_length=64)] = None,
+    invoice_status: Annotated[str | None, Query(alias="status", max_length=32)] = None,
+    vendor_id: UUID | None = None,
+    purchase_order_id: UUID | None = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> InvoiceListResponse:
+    items, total = list_invoices(
+        session,
+        q=q,
+        status=invoice_status,
+        vendor_id=vendor_id,
+        purchase_order_id=purchase_order_id,
+        limit=limit,
+        offset=offset,
+    )
+    return InvoiceListResponse(
+        items=[InvoiceListItem.model_validate(item) for item in items],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/{invoice_id}", response_model=InvoiceResponse)

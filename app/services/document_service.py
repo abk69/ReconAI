@@ -8,12 +8,13 @@ import re
 from pathlib import Path
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.db.models import Document, GoodsReceipt, Invoice, PurchaseOrder, Vendor
 from app.domain.enums import DocumentStatus, DocumentType
+from app.services.workspace_query import like_pattern
 from app.storage.base import StorageBackend, StorageError
 from app.storage.local import LocalFileStorage
 
@@ -208,6 +209,47 @@ class DocumentService:
             raise DocumentNotFoundError(f"Document {document_id} was not found.")
         return row
 
+    def list_page(
+        self,
+        *,
+        document_type: DocumentType | None = None,
+        status: DocumentStatus | None = None,
+        vendor_id: UUID | None = None,
+        purchase_order_id: UUID | None = None,
+        invoice_id: UUID | None = None,
+        goods_receipt_id: UUID | None = None,
+        q: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> tuple[list[Document], int]:
+        filters = []
+        if document_type is not None:
+            filters.append(Document.document_type == document_type.value)
+        if status is not None:
+            filters.append(Document.status == status.value)
+        if vendor_id is not None:
+            filters.append(Document.vendor_id == vendor_id)
+        if purchase_order_id is not None:
+            filters.append(Document.purchase_order_id == purchase_order_id)
+        if invoice_id is not None:
+            filters.append(Document.invoice_id == invoice_id)
+        if goods_receipt_id is not None:
+            filters.append(Document.goods_receipt_id == goods_receipt_id)
+        if q:
+            filters.append(Document.original_filename.ilike(like_pattern(q), escape="\\"))
+        count_stmt = select(func.count()).select_from(Document)
+        if filters:
+            count_stmt = count_stmt.where(*filters)
+        total = int(self._session.scalar(count_stmt) or 0)
+        stmt = select(Document).order_by(Document.created_at.desc())
+        if filters:
+            stmt = stmt.where(*filters)
+        if offset:
+            stmt = stmt.offset(offset)
+        if limit is not None:
+            stmt = stmt.limit(limit)
+        return list(self._session.scalars(stmt).all()), total
+
     def list(
         self,
         *,
@@ -218,20 +260,15 @@ class DocumentService:
         invoice_id: UUID | None = None,
         goods_receipt_id: UUID | None = None,
     ) -> list[Document]:
-        stmt = select(Document).order_by(Document.created_at.desc())
-        if document_type is not None:
-            stmt = stmt.where(Document.document_type == document_type.value)
-        if status is not None:
-            stmt = stmt.where(Document.status == status.value)
-        if vendor_id is not None:
-            stmt = stmt.where(Document.vendor_id == vendor_id)
-        if purchase_order_id is not None:
-            stmt = stmt.where(Document.purchase_order_id == purchase_order_id)
-        if invoice_id is not None:
-            stmt = stmt.where(Document.invoice_id == invoice_id)
-        if goods_receipt_id is not None:
-            stmt = stmt.where(Document.goods_receipt_id == goods_receipt_id)
-        return list(self._session.scalars(stmt).all())
+        rows, _total = self.list_page(
+            document_type=document_type,
+            status=status,
+            vendor_id=vendor_id,
+            purchase_order_id=purchase_order_id,
+            invoice_id=invoice_id,
+            goods_receipt_id=goods_receipt_id,
+        )
+        return rows
 
     def update_associations(
         self,

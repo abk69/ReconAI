@@ -119,18 +119,24 @@ def list_documents(
     purchase_order_id: UUID | None = None,
     invoice_id: UUID | None = None,
     goods_receipt_id: UUID | None = None,
+    q: Annotated[str | None, Query(max_length=200)] = None,
+    limit: Annotated[int | None, Query(ge=1, le=100)] = None,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ) -> DocumentListResponse:
     service = _document_service(session)
-    rows = service.list(
+    rows, total = service.list_page(
         document_type=document_type,
         status=doc_status,
         vendor_id=vendor_id,
         purchase_order_id=purchase_order_id,
         invoice_id=invoice_id,
         goods_receipt_id=goods_receipt_id,
+        q=q,
+        limit=limit,
+        offset=offset,
     )
     items = [_to_response(row) for row in rows]
-    return DocumentListResponse(items=items, count=len(items))
+    return DocumentListResponse(items=items, count=len(items), total=total)
 
 
 @router.get("/{document_id}", response_model=DocumentResponse)

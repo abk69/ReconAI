@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, HTTPException, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.db.models import ReconciliationException
@@ -16,6 +16,11 @@ from app.schemas.reconciliation import (
     ReconciliationRunRequest,
     ReconciliationRunResponse,
     ReconciliationSummaryResponse,
+)
+from app.schemas.workspace import (
+    ReconciliationExceptionDetail,
+    ReconciliationExceptionListItem,
+    ReconciliationExceptionListResponse,
 )
 from app.services.policy_grounding_service import (
     PolicyGroundingNotFoundError,
@@ -33,10 +38,61 @@ from app.services.resolution_planning_service import (
     ResolutionPlanningService,
     ResolutionPlanningValidationError,
 )
+from app.services.workspace_query import get_exception, list_exceptions
 
 router = APIRouter(prefix="/reconciliation", tags=["reconciliation"])
 
 DbSession = Annotated[Session, Depends(get_db)]
+
+
+@router.get("/exceptions", response_model=ReconciliationExceptionListResponse)
+def list_reconciliation_exceptions(
+    session: DbSession,
+    q: Annotated[str | None, Query(max_length=64)] = None,
+    exception_status: Annotated[str | None, Query(alias="status", max_length=32)] = None,
+    severity: Annotated[str | None, Query(max_length=32)] = None,
+    exception_type: Annotated[str | None, Query(max_length=64)] = None,
+    invoice_id: UUID | None = None,
+    purchase_order_id: UUID | None = None,
+    goods_receipt_id: UUID | None = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> ReconciliationExceptionListResponse:
+    """Persisted M2 exceptions. Does not run reconciliation."""
+    items, total, counts = list_exceptions(
+        session,
+        q=q,
+        status=exception_status,
+        severity=severity,
+        exception_type=exception_type,
+        invoice_id=invoice_id,
+        purchase_order_id=purchase_order_id,
+        goods_receipt_id=goods_receipt_id,
+        limit=limit,
+        offset=offset,
+    )
+    return ReconciliationExceptionListResponse(
+        items=[ReconciliationExceptionListItem.model_validate(item) for item in items],
+        total=total,
+        limit=limit,
+        offset=offset,
+        counts_by_status=counts,
+    )
+
+
+@router.get("/exceptions/{exception_id}", response_model=ReconciliationExceptionDetail)
+def get_reconciliation_exception(
+    exception_id: UUID,
+    session: DbSession,
+) -> ReconciliationExceptionDetail:
+    """Persisted exception and evidence. Does not call policy or resolution models."""
+    row = get_exception(session, exception_id)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Reconciliation exception {exception_id} was not found.",
+        )
+    return ReconciliationExceptionDetail.model_validate(row)
 
 
 @router.post(
