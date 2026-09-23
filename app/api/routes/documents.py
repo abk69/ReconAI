@@ -9,8 +9,14 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.db.session import get_db
-from app.domain.enums import DocumentStatus, DocumentType
-from app.schemas.documents import DocumentListResponse, DocumentResponse, DocumentUpdateRequest
+from app.domain.enums import DocumentStatus, DocumentType, ExtractionOutcome, ReviewStatus
+from app.schemas.documents import (
+    DocumentListItem,
+    DocumentListResponse,
+    DocumentResponse,
+    DocumentUpdateRequest,
+    RawExtractionResponse,
+)
 from app.schemas.llm_understanding import LlmUnderstandingResponse
 from app.schemas.understanding import UnderstandingResponse
 from app.services.document_service import (
@@ -57,6 +63,42 @@ def _to_response(row: object, *, is_duplicate: bool = False) -> DocumentResponse
         updated_at=row.updated_at,  # type: ignore[attr-defined]
         is_duplicate=is_duplicate,
     )
+
+
+def _known(
+    enum_cls: type[DocumentType] | type[ExtractionOutcome] | type[ReviewStatus],
+    value: str | None,
+):
+    if value is None or value not in enum_cls._value2member_map_:
+        return None
+    return enum_cls(value)
+
+
+_REDACTED_KEYS = {
+    "storage_path",
+    "absolute_path",
+    "api_key",
+    "authorization",
+    "secret",
+    "token",
+    "password",
+    "credentials",
+    "provider_metadata",
+}
+
+
+def _redact(value: object) -> object:
+    if isinstance(value, dict):
+        cleaned = {}
+        for key, item in value.items():
+            lowered = str(key).lower()
+            if lowered in _REDACTED_KEYS or "api_key" in lowered or "secret" in lowered:
+                continue
+            cleaned[key] = _redact(item)
+        return cleaned
+    if isinstance(value, list):
+        return [_redact(item) for item in value]
+    return value
 
 
 def _document_service(session: Session) -> DocumentService:
@@ -120,6 +162,8 @@ def list_documents(
     invoice_id: UUID | None = None,
     goods_receipt_id: UUID | None = None,
     q: Annotated[str | None, Query(max_length=200)] = None,
+    extraction_outcome: ExtractionOutcome | None = None,
+    review_status: ReviewStatus | None = None,
     limit: Annotated[int | None, Query(ge=1, le=100)] = None,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> DocumentListResponse:
@@ -132,10 +176,24 @@ def list_documents(
         invoice_id=invoice_id,
         goods_receipt_id=goods_receipt_id,
         q=q,
+        extraction_outcome=extraction_outcome.value if extraction_outcome else None,
+        review_status=review_status.value if review_status else None,
         limit=limit,
         offset=offset,
     )
-    items = [_to_response(row) for row in rows]
+    facts = service.workspace_facts([row.id for row in rows])
+    items = []
+    for row in rows:
+        fact = facts[row.id]
+        base = _to_response(row)
+        items.append(
+            DocumentListItem(
+                **base.model_dump(),
+                detected_type=_known(DocumentType, fact["detected_type"]),
+                extraction_outcome=_known(ExtractionOutcome, fact["extraction_outcome"]),
+                review_status=_known(ReviewStatus, fact["review_status"]),
+            )
+        )
     return DocumentListResponse(items=items, count=len(items), total=total)
 
 
@@ -198,6 +256,22 @@ def understand_document(document_id: UUID, session: DbSession) -> UnderstandingR
         evidence=result.evidence,
         extractor_version=result.extractor_version,
         has_raw_extraction=bool(result.raw_extraction),
+    )
+
+
+@router.get("/{document_id}/raw-extraction", response_model=RawExtractionResponse)
+def get_raw_extraction(document_id: UUID, session: DbSession) -> RawExtractionResponse:
+    """Return the stored raw extraction. Loaded only when a caller asks for it."""
+    settings = get_settings()
+    service = DocumentUnderstandingService(session, storage=LocalFileStorage(settings.storage_root))
+    try:
+        result = service.get_understanding(document_id)
+    except DocumentUnderstandingNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    redacted = _redact(result.raw_extraction)
+    return RawExtractionResponse(
+        document_id=document_id,
+        raw_extraction=redacted if isinstance(redacted, dict) else {},
     )
 
 

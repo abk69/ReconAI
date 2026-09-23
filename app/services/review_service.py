@@ -158,6 +158,7 @@ class ReviewService:
         document_type: DocumentType | None = None,
         priority: ReviewPriority | None = None,
         q: str | None = None,
+        document_id: UUID | None = None,
         limit: int | None = None,
         offset: int = 0,
     ) -> list[ReviewTask]:
@@ -166,6 +167,7 @@ class ReviewService:
             document_type=document_type,
             priority=priority,
             q=q,
+            document_id=document_id,
         ).options(
             selectinload(ReviewTask.decisions),
             selectinload(ReviewTask.extraction_result),
@@ -185,12 +187,14 @@ class ReviewService:
         document_type: DocumentType | None = None,
         priority: ReviewPriority | None = None,
         q: str | None = None,
+        document_id: UUID | None = None,
     ) -> int:
         stmt = self._task_statement(
             status=status,
             document_type=document_type,
             priority=priority,
             q=q,
+            document_id=document_id,
         )
         total = self._session.scalar(select(func.count()).select_from(stmt.subquery()))
         return int(total or 0)
@@ -202,6 +206,7 @@ class ReviewService:
         document_type: DocumentType | None,
         priority: ReviewPriority | None,
         q: str | None,
+        document_id: UUID | None = None,
     ):
         stmt = (
             select(ReviewTask)
@@ -215,6 +220,8 @@ class ReviewService:
             stmt = stmt.where(Document.document_type == document_type.value)
         if q:
             stmt = stmt.where(Document.original_filename.ilike(like_pattern(q), escape="\\"))
+        if document_id is not None:
+            stmt = stmt.where(ReviewTask.document_id == document_id)
         return stmt
 
     def start_review(

@@ -23,7 +23,11 @@ type ListParams = {
 };
 
 export function listDocuments(
-  params: ListParams & { document_type?: string },
+  params: ListParams & {
+    document_type?: string;
+    extraction_outcome?: string;
+    review_status?: string;
+  },
   signal?: AbortSignal,
 ): Promise<DocumentList> {
   return apiRequest(withQuery("/documents", params), { signal });

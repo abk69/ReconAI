@@ -119,6 +119,10 @@ export type DocumentItem = {
   id: string;
   original_filename: string;
   document_type: string;
+  mime_type: string;
+  file_extension: string;
+  file_size: number;
+  sha256: string;
   status: string;
   vendor_id: string | null;
   purchase_order_id: string | null;
@@ -126,6 +130,9 @@ export type DocumentItem = {
   invoice_id: string | null;
   created_at: string;
   updated_at: string;
+  detected_type?: string | null;
+  extraction_outcome?: string | null;
+  review_status?: string | null;
 };
 
 export type DocumentList = {

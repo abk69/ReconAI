@@ -28,6 +28,7 @@ export function listReviewTasks(
     status?: string;
     document_type?: string;
     priority?: string;
+    document_id?: string;
     limit?: number;
     offset?: number;
   },

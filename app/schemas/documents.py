@@ -7,7 +7,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.domain.enums import DocumentStatus, DocumentType
+from app.domain.enums import DocumentStatus, DocumentType, ExtractionOutcome, ReviewStatus
 
 
 class DocumentResponse(BaseModel):
@@ -44,9 +44,26 @@ class DocumentUpdateRequest(BaseModel):
     invoice_id: UUID | None = None
 
 
+class DocumentListItem(DocumentResponse):
+    """List row plus stored extraction and review facts. Null means no stored row."""
+
+    detected_type: DocumentType | None = None
+    extraction_outcome: ExtractionOutcome | None = None
+    review_status: ReviewStatus | None = None
+
+
 class DocumentListResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    items: list[DocumentResponse] = Field(default_factory=list)
+    items: list[DocumentListItem] = Field(default_factory=list)
     count: int
     total: int
+
+
+class RawExtractionResponse(BaseModel):
+    """Stored M4 raw extraction. Callers must not treat this as a promoted record."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    document_id: UUID
+    raw_extraction: dict = Field(default_factory=dict)

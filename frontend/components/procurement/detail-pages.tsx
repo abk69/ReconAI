@@ -9,7 +9,6 @@ import { useResource } from "@/components/procurement/use-resource";
 import { DataTable } from "@/components/ui/data-table";
 import { EnumBadge } from "@/components/ui/enum-badge";
 import {
-  getDocument,
   getException,
   getGoodsReceipt,
   getInvoice,
@@ -36,42 +35,6 @@ function Related({ title, children }: { title: string; children: ReactNode }) {
       <h2 className="text-base font-semibold text-ink">{title}</h2>
       <div className="mt-3 text-sm">{children}</div>
     </section>
-  );
-}
-
-export function DocumentDetailPage({ id }: { id: string }) {
-  const state = useResource(id, (signal) => getDocument(id, signal), "Document");
-  return (
-    <div className="mx-auto max-w-4xl space-y-5">
-      <RecordState state={state} loadingTitle="Loading document" empty={null}>
-        {(doc) => (
-          <>
-            <div>
-              <h1 className="text-2xl font-semibold text-ink">{doc.original_filename}</h1>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <EnumBadge value={doc.document_type} kind="status" />
-                <EnumBadge value={doc.status} kind="status" />
-              </div>
-              <p className="mt-3 text-sm text-ink-muted">
-                Status is the persisted document lifecycle. It does not mean extraction succeeded
-                unless the status says so.
-              </p>
-            </div>
-            <dl className="grid gap-4 rounded-md border border-line bg-surface p-5 sm:grid-cols-2">
-              <Meta label="Created" value={formatTimestamp(doc.created_at)} />
-              <Meta label="Updated" value={formatTimestamp(doc.updated_at)} />
-            </dl>
-            <Related title="Linked procurement records">
-              <ul className="space-y-2">
-                <li>{doc.purchase_order_id ? <Link className="text-brand underline" href={`/purchase-orders/${doc.purchase_order_id}`}>Purchase order</Link> : "No purchase order linked"}</li>
-                <li>{doc.goods_receipt_id ? <Link className="text-brand underline" href={`/goods-receipts/${doc.goods_receipt_id}`}>Goods receipt</Link> : "No goods receipt linked"}</li>
-                <li>{doc.invoice_id ? <Link className="text-brand underline" href={`/invoices/${doc.invoice_id}`}>Invoice</Link> : "No invoice linked"}</li>
-              </ul>
-            </Related>
-          </>
-        )}
-      </RecordState>
-    </div>
   );
 }
 

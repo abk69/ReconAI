@@ -234,6 +234,45 @@ Detail pages render `breakdown.contributing_signals` and `breakdown.type_breakdo
 
 Scan jobs are read-only. Trend rows are only the periods the analytics API returns.
 
+## M10.6 — Document intelligence
+
+`/documents` and `/documents/{id}` present the stored path from intake through extraction, review, and promotion. The browser does not extract, validate, score confidence, or call Gemini.
+
+### Trust boundary
+
+A stored document can have an extraction candidate, a validation result, a human review task, and a promoted procurement record. Those are different objects. The candidate is labeled as a candidate. The promoted invoice, purchase order, or goods receipt is the authoritative record, and only when the review task stores a promotion target.
+
+### APIs
+
+Existing reads:
+
+- `GET /documents` and `GET /documents/{id}`
+- `GET /documents/{id}/understanding`
+- `GET /documents/{id}/llm-understanding`
+- `GET /review/tasks` and `GET /review/tasks/{id}`
+
+Added reads:
+
+- `GET /documents` now includes stored `detected_type`, `extraction_outcome`, and `review_status` for each row. Null means no stored extraction or review row. Optional filters `extraction_outcome` and `review_status` are applied in the database.
+- `GET /documents/{id}/raw-extraction` returns the stored raw extraction when the disclosure is opened. Keys that look like storage paths or secrets are omitted.
+- `GET /review/tasks?document_id=` limits the queue to one document.
+
+`storage_path` remains on the document API response and is not shown. SHA-256, MIME type, extension, and size are shown as stored file metadata. There is no document preview and no upload control.
+
+`POST /documents/{id}/understand` and `POST /documents/{id}/llm-understand` are not called by this workspace.
+
+### Lifecycle
+
+The header shows the stored document status by name. A separate derived workflow view marks Intake, Validated, Understanding, Extracted, Review, Approved or corrected, Promoted, and Ready for reconciliation from that status and from stored extraction, review, and promotion rows. Missing stages say that no row is stored. They are not errors. Times appear only when the record stores them.
+
+### M4, M5, and M6
+
+The extraction section shows the stored candidate, outcome, extractor version, validation issues, and field evidence. Page, source, and snippet say unavailable when the evidence row does not include them. Raw candidate, validation, evidence, and raw extraction stay inside disclosures.
+
+Review status, reviewer, decisions, and an Open review link go to `/review/{id}`. This page does not approve, correct, reject, or promote.
+
+Gemini-assisted extraction shows provider, model, prompt version, invocation status, application quality, quality-gate reasons, stored comparison, evidence check, and token usage when those fields are stored. Comparison rows are the persisted agreements and disagreements. The page does not choose a correct candidate. Provider metadata and API keys are not requested.
+
 ## Commands
 
 ```bash

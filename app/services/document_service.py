@@ -219,9 +219,13 @@ class DocumentService:
         invoice_id: UUID | None = None,
         goods_receipt_id: UUID | None = None,
         q: str | None = None,
+        extraction_outcome: str | None = None,
+        review_status: str | None = None,
         limit: int | None = None,
         offset: int = 0,
     ) -> tuple[list[Document], int]:
+        from app.db.models import DocumentExtractionResult, ReviewTask
+
         filters = []
         if document_type is not None:
             filters.append(Document.document_type == document_type.value)
@@ -237,11 +241,26 @@ class DocumentService:
             filters.append(Document.goods_receipt_id == goods_receipt_id)
         if q:
             filters.append(Document.original_filename.ilike(like_pattern(q), escape="\\"))
-        count_stmt = select(func.count()).select_from(Document)
+        count_stmt = select(func.count(func.distinct(Document.id))).select_from(Document)
+        stmt = select(Document)
+        if extraction_outcome is not None:
+            count_stmt = count_stmt.join(
+                DocumentExtractionResult,
+                DocumentExtractionResult.document_id == Document.id,
+            )
+            stmt = stmt.join(
+                DocumentExtractionResult,
+                DocumentExtractionResult.document_id == Document.id,
+            )
+            filters.append(DocumentExtractionResult.outcome == extraction_outcome)
+        if review_status is not None:
+            count_stmt = count_stmt.join(ReviewTask, ReviewTask.document_id == Document.id)
+            stmt = stmt.join(ReviewTask, ReviewTask.document_id == Document.id)
+            filters.append(ReviewTask.status == review_status)
         if filters:
             count_stmt = count_stmt.where(*filters)
         total = int(self._session.scalar(count_stmt) or 0)
-        stmt = select(Document).order_by(Document.created_at.desc())
+        stmt = stmt.order_by(Document.created_at.desc()).distinct()
         if filters:
             stmt = stmt.where(*filters)
         if offset:
@@ -249,6 +268,37 @@ class DocumentService:
         if limit is not None:
             stmt = stmt.limit(limit)
         return list(self._session.scalars(stmt).all()), total
+
+    def workspace_facts(self, document_ids: list[UUID]) -> dict[UUID, dict[str, str | None]]:
+        """Latest stored extraction outcome and review status for a page of documents."""
+        from app.db.models import DocumentExtractionResult, ReviewTask
+
+        facts: dict[UUID, dict[str, str | None]] = {
+            document_id: {
+                "detected_type": None,
+                "extraction_outcome": None,
+                "review_status": None,
+            }
+            for document_id in document_ids
+        }
+        if not document_ids:
+            return facts
+        extractions = self._session.scalars(
+            select(DocumentExtractionResult).where(
+                DocumentExtractionResult.document_id.in_(document_ids)
+            )
+        ).all()
+        for row in extractions:
+            facts[row.document_id]["detected_type"] = row.detected_type
+            facts[row.document_id]["extraction_outcome"] = row.outcome
+        reviews = self._session.scalars(
+            select(ReviewTask)
+            .where(ReviewTask.document_id.in_(document_ids))
+            .order_by(ReviewTask.created_at.asc())
+        ).all()
+        for task in reviews:
+            facts[task.document_id]["review_status"] = task.status
+        return facts
 
     def list(
         self,

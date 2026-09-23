@@ -27,10 +27,17 @@ const DOCUMENT_STATUSES = [
   "REVIEW_REQUIRED",
   "REVIEW_REJECTED",
 ];
+const EXTRACTION_OUTCOMES = [
+  "READY_FOR_RECONCILIATION",
+  "REVIEW_REQUIRED",
+  "VALIDATION_FAILED",
+  "EXTRACTION_FAILED",
+];
+const REVIEW_STATUSES = ["PENDING", "IN_REVIEW", "APPROVED", "CORRECTED", "REJECTED"];
 
 function DocumentsBody() {
   const query = useListQuery();
-  const key = `documents:${query.q}:${query.documentType}:${query.status}:${query.offset}`;
+  const key = `documents:${query.q}:${query.documentType}:${query.status}:${query.extractionOutcome}:${query.reviewStatus}:${query.offset}`;
   const state = useResource(
     key,
     (signal) =>
@@ -39,6 +46,8 @@ function DocumentsBody() {
           q: query.q,
           document_type: query.documentType,
           status: query.status,
+          extraction_outcome: query.extractionOutcome,
+          review_status: query.reviewStatus,
           limit: LIMIT,
           offset: query.offset,
         },
@@ -52,15 +61,18 @@ function DocumentsBody() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight text-ink">Documents</h1>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-ink-muted">
-          Persisted intake records. Status is the stored document lifecycle, not an extraction
-          confidence score. Upload is not available on this page.
+          Persisted intake records. Current document status, extraction outcome, and review status
+          are stored facts. An extraction candidate is not an authoritative procurement record.
+          Upload is not available on this page.
         </p>
       </div>
       <FilterBar
         fields={[
           { name: "q", label: "Filename" },
           { name: "document_type", label: "Document type", options: DOCUMENT_TYPES },
-          { name: "status", label: "Status", options: DOCUMENT_STATUSES },
+          { name: "status", label: "Document status", options: DOCUMENT_STATUSES },
+          { name: "extraction_outcome", label: "Extraction outcome", options: EXTRACTION_OUTCOMES },
+          { name: "review_status", label: "Review status", options: REVIEW_STATUSES },
         ]}
       />
       <RecordState
@@ -97,13 +109,40 @@ function DocumentsBody() {
                   cell: (row) => <EnumBadge value={row.document_type} kind="status" />,
                 },
                 {
+                  key: "detected",
+                  header: "Detected type",
+                  cell: (row) => row.detected_type ?? "Not stored",
+                },
+                {
                   key: "status",
-                  header: "Status",
+                  header: "Document status",
                   cell: (row) => <EnumBadge value={row.status} kind="status" />,
                 },
                 {
+                  key: "extraction",
+                  header: "Extraction outcome",
+                  cell: (row) => row.extraction_outcome ?? "Not stored",
+                },
+                {
+                  key: "review",
+                  header: "Review status",
+                  cell: (row) => row.review_status ?? "No review task",
+                },
+                {
+                  key: "links",
+                  header: "Linked records",
+                  cell: (row) => (
+                    <span className="flex flex-col gap-1">
+                      {row.purchase_order_id ? <Link className="text-brand underline" href={`/purchase-orders/${row.purchase_order_id}`}>Purchase order</Link> : null}
+                      {row.goods_receipt_id ? <Link className="text-brand underline" href={`/goods-receipts/${row.goods_receipt_id}`}>Goods receipt</Link> : null}
+                      {row.invoice_id ? <Link className="text-brand underline" href={`/invoices/${row.invoice_id}`}>Invoice</Link> : null}
+                      {!row.purchase_order_id && !row.goods_receipt_id && !row.invoice_id ? "None linked" : null}
+                    </span>
+                  ),
+                },
+                {
                   key: "created",
-                  header: "Created",
+                  header: "Uploaded",
                   cell: (row) => formatTimestamp(row.created_at),
                 },
               ]}

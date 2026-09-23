@@ -117,6 +117,7 @@ def list_review_tasks(
     document_type: DocumentType | None = None,
     priority: ReviewPriority | None = None,
     q: Annotated[str | None, Query(max_length=200)] = None,
+    document_id: UUID | None = None,
     limit: Annotated[int | None, Query(ge=1, le=100)] = None,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> ReviewTaskListResponse:
@@ -127,12 +128,14 @@ def list_review_tasks(
         document_type=document_type,
         priority=priority,
         q=needle or None,
+        document_id=document_id,
     )
     tasks = service.list_tasks(
         status=task_status,
         document_type=document_type,
         priority=priority,
         q=needle or None,
+        document_id=document_id,
         limit=limit,
         offset=offset,
     )
