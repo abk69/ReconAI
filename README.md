@@ -39,6 +39,9 @@ Intelligent procurement reconciliation and exception-resolution platform.
 | M9.1 Anomaly detection foundation | Done |
 | M9.2 Batch detection & analytics | Done |
 | M9.3 Transparent risk scoring | Done |
+| M10.1 Next.js dashboard foundation | Done |
+
+The dashboard shell lives in [`frontend/`](frontend/). See [`docs/M10_FRONTEND.md`](docs/M10_FRONTEND.md).
 
 ## M9.3 — Transparent risk scoring
 
