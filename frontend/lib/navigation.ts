@@ -32,7 +32,7 @@ export const navigation: NavSection[] = [
     label: "Intelligence",
     items: [
       { label: "Exceptions", href: "/exceptions", available: true },
-      { label: "Risk & Anomalies", href: "/risk", available: false },
+      { label: "Risk & Anomalies", href: "/risk", available: true },
       { label: "Policy Intelligence", href: "/policies", available: false },
     ],
   },

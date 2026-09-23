@@ -229,6 +229,7 @@ class AnomalyService:
         purchase_order_id: UUID | None = None,
         detected_from: datetime | None = None,
         detected_to: datetime | None = None,
+        high_or_critical: bool = False,
         limit: int = 100,
         cursor: str | None = None,
     ) -> tuple[list[AnomalySignalRecord], str | None]:
@@ -246,6 +247,8 @@ class AnomalyService:
                 AnomalySignalRecord.severity
                 == (severity.value if isinstance(severity, AnomalySeverity) else severity)
             )
+        elif high_or_critical:
+            stmt = stmt.where(AnomalySignalRecord.severity.in_(("HIGH", "CRITICAL")))
         if vendor_id is not None:
             stmt = stmt.where(AnomalySignalRecord.vendor_id == vendor_id)
         if invoice_id is not None:

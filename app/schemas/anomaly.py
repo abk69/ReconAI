@@ -78,6 +78,15 @@ class AnomalyScanResponse(BaseModel):
     updated_at: datetime
 
 
+class AnomalyScanListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[AnomalyScanResponse]
+    total: int = Field(ge=0)
+    limit: int = Field(ge=1)
+    offset: int = Field(ge=0)
+
+
 class AnomalyScanCreateResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

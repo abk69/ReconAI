@@ -15,6 +15,8 @@ from app.anomaly.analytics import (
     get_vendor_anomaly_summary,
 )
 from app.anomaly.enums import (
+    AnomalyScanStatus,
+    AnomalyScanType,
     AnomalySeverity,
     AnomalyTrendPeriod,
     AnomalyType,
@@ -33,6 +35,7 @@ from app.schemas.anomaly import (
     AnomalyPageResponse,
     AnomalyScanCreateRequest,
     AnomalyScanCreateResponse,
+    AnomalyScanListResponse,
     AnomalyScanResponse,
     AnomalySignalResponse,
     AnomalySummaryResponse,
@@ -42,6 +45,7 @@ from app.schemas.anomaly import (
     VendorAnomalySummaryResponse,
 )
 from app.services.anomaly_service import AnomalyNotFoundError, AnomalyService
+from app.services.intelligence_read import list_scan_jobs
 
 router = APIRouter(prefix="/anomalies", tags=["anomalies"])
 
@@ -78,6 +82,30 @@ def create_anomaly_scan(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
         ) from exc
+
+
+@router.get("/scans", response_model=AnomalyScanListResponse)
+def list_anomaly_scans(
+    session: DbSession,
+    scan_status: Annotated[AnomalyScanStatus | None, Query(alias="status")] = None,
+    scan_type: Annotated[AnomalyScanType | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> AnomalyScanListResponse:
+    """Persisted scan jobs. Does not create or run a scan."""
+    rows, total = list_scan_jobs(
+        session,
+        status=scan_status.value if scan_status is not None else None,
+        scan_type=scan_type.value if scan_type is not None else None,
+        limit=limit,
+        offset=offset,
+    )
+    return AnomalyScanListResponse(
+        items=[_scan_response(row) for row in rows],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/scans/{scan_id}", response_model=AnomalyScanResponse)
@@ -270,6 +298,7 @@ def list_anomalies(
     purchase_order_id: Annotated[UUID | None, Query()] = None,
     detected_from: Annotated[datetime | None, Query()] = None,
     detected_to: Annotated[datetime | None, Query()] = None,
+    high_or_critical: Annotated[bool, Query()] = False,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
     cursor: Annotated[str | None, Query()] = None,
 ) -> AnomalyPageResponse:
@@ -284,6 +313,7 @@ def list_anomalies(
             purchase_order_id=purchase_order_id,
             detected_from=detected_from,
             detected_to=detected_to,
+            high_or_critical=high_or_critical and severity is None,
             limit=limit,
             cursor=cursor,
         )

@@ -30,7 +30,7 @@ Below the `lg` breakpoint the sidebar collapses into a button-controlled navigat
 | `/invoices` | Invoice list and detail |
 | `/reconciliation` | Persisted reconciliation exceptions |
 | `/exceptions` | Exception queue |
-| `/risk` | Coming later |
+| `/risk` | Risk and anomaly intelligence |
 | `/policies` | Coming later |
 | `/review` | Extraction review center |
 | `/resolution` | Resolution plans |
@@ -193,6 +193,46 @@ Audit events show event type, actor type (`SYSTEM`, `LLM`, or `HUMAN`), actor, t
 ### Mutation behavior
 
 Consequential actions require an explicit click and a confirmation that names the action. Success text comes from the API response. The screen then reloads authoritative state. Approval, rejection, promotion, and execution are not applied optimistically.
+
+## M10.5 — Risk and anomaly intelligence
+
+`/risk` presents stored M9 anomaly signals and risk profiles. The browser does not score entities, detect anomalies, or call Gemini.
+
+### APIs
+
+Existing reads:
+
+- `GET /anomalies` with cursor pagination and filters for type, severity, vendor, invoice, purchase order, and detected time
+- `GET /anomalies/{id}`
+- `GET /anomalies/summary` and `GET /anomalies/trends`
+- `GET /risk/vendors/{id}`, `GET /risk/invoices/{id}`, and `GET /risk/purchase-orders/{id}` calculate a profile when one is missing. The workspace does not call those routes.
+
+Added reads:
+
+- `GET /risk/profiles` returns the latest stored profile per entity and score version, matching the dashboard rule of maximum `as_of`. `counts_by_band` uses that same set.
+- `GET /risk/profiles/{entity_type}/{entity_id}` returns the stored current profile and immutable history. Optional `as_of` selects one stored date. A missing date returns `current: null` and does not calculate a score.
+- `GET /anomalies/scans` lists stored scan jobs.
+- `GET /anomalies?high_or_critical=true` limits the list to HIGH and CRITICAL when a single severity is not also set.
+
+### Routes
+
+| Path | Content |
+| --- | --- |
+| `/risk` | Band summary, anomaly counts, high-priority signals, anomaly queue, trends, scan jobs |
+| `/risk/vendors/[id]` | Stored vendor profile, breakdown, history, vendor-scoped signals |
+| `/risk/invoices/[id]` | Stored invoice profile and invoice-scoped signals |
+| `/risk/purchase-orders/[id]` | Stored purchase-order profile and purchase-order-scoped signals |
+| `/risk/anomalies/[id]` | One stored anomaly signal and its evidence |
+
+### Presentation
+
+An anomaly is a deterministic M9 signal. A risk score is a deterministic aggregation of those signals for one entity. Scores are shown as `Risk score: 78` with the stored signal count. The page states that scores are not fraud probabilities.
+
+Detail pages render `breakdown.contributing_signals` and `breakdown.type_breakdown` as stored. They do not recompute weights or caps. A fingerprint is labeled as a stable record identity.
+
+`as_of` is labeled point-in-time risk. A stored score of 0 is shown as that score. A date with no stored row says no profile is stored for that point in time. Historical rows stay in the history list and are not described as recalculated.
+
+Scan jobs are read-only. Trend rows are only the periods the analytics API returns.
 
 ## Commands
 
