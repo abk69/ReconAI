@@ -27,7 +27,19 @@ const TYPES = [
   "OTHER",
 ];
 
-function ReconciliationBody() {
+function ReconciliationBody({
+  detailBase,
+  title,
+  description,
+  emptyTitle,
+  emptyDescription,
+}: {
+  detailBase: string;
+  title: string;
+  description: string;
+  emptyTitle: string;
+  emptyDescription: string;
+}) {
   const query = useListQuery();
   const params = useSearchParams();
   const router = useRouter();
@@ -63,11 +75,8 @@ function ReconciliationBody() {
   return (
     <div className="mx-auto max-w-6xl space-y-5">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-ink">Reconciliation</h1>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-ink-muted">
-          Persisted results from the deterministic reconciliation engine. This page does not
-          decide whether records match and does not load policy or AI explanations.
-        </p>
+        <h1 className="text-2xl font-semibold tracking-tight text-ink">{title}</h1>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-ink-muted">{description}</p>
       </div>
       <FilterBar
         key={params.toString()}
@@ -102,9 +111,8 @@ function ReconciliationBody() {
         empty={
           state.kind === "ready" && state.data.total === 0
             ? {
-                title: "No reconciliation exceptions recorded",
-                description:
-                  "No persisted exceptions match this filter. A match that was never stored is not shown as a success count.",
+                title: emptyTitle,
+                description: emptyDescription,
               }
             : null
         }
@@ -120,7 +128,7 @@ function ReconciliationBody() {
                   key: "type",
                   header: "Type",
                   cell: (row) => (
-                    <Link className="text-brand underline" href={`/reconciliation/${row.id}`}>
+                    <Link className="text-brand underline" href={`${detailBase}/${row.id}`}>
                       {row.exception_type}
                     </Link>
                   ),
@@ -179,10 +187,30 @@ function ReconciliationBody() {
   );
 }
 
-export function ReconciliationPage() {
+export function ReconciliationPage({
+  detailBase = "/reconciliation",
+  title = "Reconciliation",
+  description = "Persisted results from the deterministic reconciliation engine. This page does not decide whether records match and does not load policy or AI explanations.",
+  emptyTitle = "No reconciliation exceptions recorded",
+  emptyDescription = "No persisted exceptions match this filter. A match that was never stored is not shown as a success count.",
+  loadingTitle = "Loading reconciliation",
+}: {
+  detailBase?: string;
+  title?: string;
+  description?: string;
+  emptyTitle?: string;
+  emptyDescription?: string;
+  loadingTitle?: string;
+}) {
   return (
-    <Suspense fallback={<LoadingState title="Loading reconciliation" description="Preparing filters." />}>
-      <ReconciliationBody />
+    <Suspense fallback={<LoadingState title={loadingTitle} description="Preparing filters." />}>
+      <ReconciliationBody
+        detailBase={detailBase}
+        title={title}
+        description={description}
+        emptyTitle={emptyTitle}
+        emptyDescription={emptyDescription}
+      />
     </Suspense>
   );
 }

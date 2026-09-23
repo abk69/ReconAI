@@ -191,6 +191,39 @@ class ProposedActionListResponse(BaseModel):
     count: int
 
 
+class ResolutionPlanListItem(BaseModel):
+    """List row. Reasoning is an AI proposal, not a financial decision."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    reconciliation_exception_id: UUID
+    status: str
+    reasoning_summary: str
+    proposed_by: str | None = None
+    planner_model: str | None = None
+    created_at: datetime
+    action_count: int = Field(ge=0)
+    exception_type: str | None = None
+    exception_message: str | None = None
+
+
+class ResolutionPlanListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[ResolutionPlanListItem]
+    total: int = Field(ge=0)
+    limit: int = Field(ge=1)
+    offset: int = Field(ge=0)
+
+
+class ActionApprovalListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[ActionApprovalResponse]
+    count: int
+
+
 class ActionExecutionListResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

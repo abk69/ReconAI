@@ -100,3 +100,27 @@ class ReconciliationExceptionDetail(ReconciliationExceptionListItem):
     source_document_ids: list[Any]
     evidence: dict[str, Any]
     resolved_at: datetime | None
+
+
+class PolicyGroundingRead(BaseModel):
+    """Persisted AI policy explanation. Not a reconciliation fact."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    reconciliation_exception_id: UUID
+    status: str
+    conclusion: str
+    explanation: str
+    policy_support: str
+    limitations: str
+    citations: list[Any]
+    created_at: datetime
+    model: str | None = None
+
+
+class PolicyGroundingListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[PolicyGroundingRead]
+    count: int

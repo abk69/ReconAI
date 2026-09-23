@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.db.models import Document, DocumentExtractionResult, ReviewDecision, ReviewTask
@@ -29,6 +29,7 @@ from app.review.transitions import (
     InvalidReviewTransitionError,
     assert_transition,
 )
+from app.services.workspace_query import like_pattern
 
 
 class ReviewServiceError(Exception):
@@ -156,16 +157,55 @@ class ReviewService:
         status: ReviewStatus | None = None,
         document_type: DocumentType | None = None,
         priority: ReviewPriority | None = None,
+        q: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
     ) -> list[ReviewTask]:
+        stmt = self._task_statement(
+            status=status,
+            document_type=document_type,
+            priority=priority,
+            q=q,
+        ).options(
+            selectinload(ReviewTask.decisions),
+            selectinload(ReviewTask.extraction_result),
+            selectinload(ReviewTask.document),
+        )
+        stmt = stmt.order_by(ReviewTask.created_at.desc())
+        if offset:
+            stmt = stmt.offset(offset)
+        if limit is not None:
+            stmt = stmt.limit(limit)
+        return list(self._session.scalars(stmt).unique().all())
+
+    def count_tasks(
+        self,
+        *,
+        status: ReviewStatus | None = None,
+        document_type: DocumentType | None = None,
+        priority: ReviewPriority | None = None,
+        q: str | None = None,
+    ) -> int:
+        stmt = self._task_statement(
+            status=status,
+            document_type=document_type,
+            priority=priority,
+            q=q,
+        )
+        total = self._session.scalar(select(func.count()).select_from(stmt.subquery()))
+        return int(total or 0)
+
+    def _task_statement(
+        self,
+        *,
+        status: ReviewStatus | None,
+        document_type: DocumentType | None,
+        priority: ReviewPriority | None,
+        q: str | None,
+    ):
         stmt = (
             select(ReviewTask)
             .join(Document, ReviewTask.document_id == Document.id)
-            .options(
-                selectinload(ReviewTask.decisions),
-                selectinload(ReviewTask.extraction_result),
-                selectinload(ReviewTask.document),
-            )
-            .order_by(ReviewTask.created_at.desc())
         )
         if status is not None:
             stmt = stmt.where(ReviewTask.status == status.value)
@@ -173,7 +213,9 @@ class ReviewService:
             stmt = stmt.where(ReviewTask.priority == priority.value)
         if document_type is not None:
             stmt = stmt.where(Document.document_type == document_type.value)
-        return list(self._session.scalars(stmt).unique().all())
+        if q:
+            stmt = stmt.where(Document.original_filename.ilike(like_pattern(q), escape="\\"))
+        return stmt
 
     def start_review(
         self,

@@ -42,6 +42,7 @@ Intelligent procurement reconciliation and exception-resolution platform.
 | M10.1 Next.js dashboard foundation | Done |
 | M10.2 Executive dashboard | Done |
 | M10.3 Procurement reconciliation workspace | Done |
+| M10.4 Exception and human review center | Done |
 
 The dashboard shell lives in [`frontend/`](frontend/). See [`docs/M10_FRONTEND.md`](docs/M10_FRONTEND.md).
 

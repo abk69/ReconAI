@@ -69,6 +69,7 @@ class ReviewTaskResponse(BaseModel):
     document_type: DocumentType | None = None
     detected_type: DocumentType | None = None
     document_status: str | None = None
+    original_filename: str | None = None
     candidate_summary: dict[str, Any] | None = None
     reviewed_candidate: dict[str, Any] | None = None
     original_candidate: dict[str, Any] | None = None
@@ -87,6 +88,9 @@ class ReviewTaskListResponse(BaseModel):
 
     items: list[ReviewTaskResponse]
     count: int
+    total: int = 0
+    limit: int | None = None
+    offset: int = 0
 
 
 class PromoteResponse(BaseModel):

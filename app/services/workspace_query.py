@@ -8,13 +8,17 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db.models import (
+    ActionApproval,
     GoodsReceipt,
     GoodsReceiptLine,
     Invoice,
     InvoiceLine,
+    PolicyGroundingResult,
+    ProposedAction,
     PurchaseOrder,
     PurchaseOrderLine,
     ReconciliationException,
+    ResolutionPlan,
     Vendor,
 )
 from app.domain.enums import ExceptionStatus
@@ -326,3 +330,80 @@ def get_exception(session: Session, exception_id: UUID) -> dict[str, object] | N
         "created_at": exception.created_at,
         "resolved_at": exception.resolved_at,
     }
+
+
+def list_policy_grounding(session: Session, exception_id: UUID) -> list[PolicyGroundingResult]:
+    """Persisted AI explanations only. Does not call Gemini."""
+    return list(
+        session.scalars(
+            select(PolicyGroundingResult)
+            .where(PolicyGroundingResult.reconciliation_exception_id == exception_id)
+            .order_by(PolicyGroundingResult.created_at.desc())
+        ).all()
+    )
+
+
+def list_resolution_plans(
+    session: Session,
+    *,
+    status: str | None,
+    reconciliation_exception_id: UUID | None,
+    limit: int,
+    offset: int,
+) -> tuple[list[dict[str, object]], int]:
+    filters = []
+    if status:
+        filters.append(ResolutionPlan.status == status)
+    if reconciliation_exception_id is not None:
+        filters.append(ResolutionPlan.reconciliation_exception_id == reconciliation_exception_id)
+    action_count = (
+        select(func.count(ProposedAction.id))
+        .where(ProposedAction.resolution_plan_id == ResolutionPlan.id)
+        .correlate(ResolutionPlan)
+        .scalar_subquery()
+    )
+    base = (
+        select(
+            ResolutionPlan,
+            ReconciliationException.exception_type,
+            ReconciliationException.message,
+            action_count,
+        )
+        .join(
+            ReconciliationException,
+            ResolutionPlan.reconciliation_exception_id == ReconciliationException.id,
+        )
+    )
+    if filters:
+        base = base.where(*filters)
+    total = int(session.scalar(select(func.count()).select_from(base.subquery())) or 0)
+    rows = session.execute(
+        base.order_by(ResolutionPlan.created_at.desc()).limit(limit).offset(offset)
+    ).all()
+    items = [
+        {
+            "id": plan.id,
+            "reconciliation_exception_id": plan.reconciliation_exception_id,
+            "status": plan.status,
+            "reasoning_summary": plan.reasoning_summary,
+            "proposed_by": plan.proposed_by,
+            "planner_model": plan.planner_model,
+            "created_at": plan.created_at,
+            "action_count": int(count or 0),
+            "exception_type": exception_type,
+            "exception_message": message,
+        }
+        for plan, exception_type, message, count in rows
+    ]
+    return items, total
+
+
+def list_action_approvals(session: Session, plan_id: UUID) -> list[ActionApproval]:
+    return list(
+        session.scalars(
+            select(ActionApproval)
+            .join(ProposedAction, ActionApproval.proposed_action_id == ProposedAction.id)
+            .where(ProposedAction.resolution_plan_id == plan_id)
+            .order_by(ActionApproval.decided_at.asc())
+        ).all()
+    )

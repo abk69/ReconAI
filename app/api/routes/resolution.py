@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -24,6 +24,7 @@ from app.domain.enums import (
 )
 from app.resolution.transitions import InvalidResolutionTransitionError
 from app.schemas.resolution import (
+    ActionApprovalListResponse,
     ActionApprovalRequest,
     ActionApprovalResponse,
     ActionDecisionResponse,
@@ -36,6 +37,8 @@ from app.schemas.resolution import (
     ProposedActionResponse,
     ResolutionAuditEventResponse,
     ResolutionAuditTrailResponse,
+    ResolutionPlanListItem,
+    ResolutionPlanListResponse,
     ResolutionPlanResponse,
 )
 from app.services.resolution_audit_service import (
@@ -54,6 +57,7 @@ from app.services.resolution_service import (
     ResolutionService,
     ResolutionValidationError,
 )
+from app.services.workspace_query import list_action_approvals, list_resolution_plans
 
 router = APIRouter(prefix="/resolution-plans", tags=["resolution"])
 DbSession = Annotated[Session, Depends(get_db)]
@@ -142,6 +146,30 @@ def _execution_response(row: ActionExecution) -> ActionExecutionResponse:
         error_code=row.error_code,
         error_message=row.error_message,
         created_at=row.created_at,
+    )
+
+
+@router.get("", response_model=ResolutionPlanListResponse)
+def list_plans(
+    session: DbSession,
+    plan_status: Annotated[str | None, Query(alias="status")] = None,
+    reconciliation_exception_id: UUID | None = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> ResolutionPlanListResponse:
+    """Persisted plans only. Does not call the planner or execute actions."""
+    items, total = list_resolution_plans(
+        session,
+        status=plan_status,
+        reconciliation_exception_id=reconciliation_exception_id,
+        limit=limit,
+        offset=offset,
+    )
+    return ResolutionPlanListResponse(
+        items=[ResolutionPlanListItem.model_validate(item) for item in items],
+        total=total,
+        limit=limit,
+        offset=offset,
     )
 
 
@@ -244,6 +272,22 @@ def reject_resolution_action(
         approval=approval,
         reused_existing=approval.id in prior_ids,
     )
+
+
+@router.get("/{plan_id}/approvals", response_model=ActionApprovalListResponse)
+def list_resolution_approvals(
+    plan_id: UUID,
+    session: DbSession,
+) -> ActionApprovalListResponse:
+    """Immutable human approval rows. Does not change plan or action state."""
+    service = ResolutionService(session)
+    try:
+        service.get_plan(plan_id)
+    except ResolutionNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    rows = list_action_approvals(session, plan_id)
+    items = [_approval_row_response(row) for row in rows]
+    return ActionApprovalListResponse(items=items, count=len(items))
 
 
 @router.get("/{plan_id}/executions", response_model=ActionExecutionListResponse)

@@ -18,6 +18,8 @@ from app.schemas.reconciliation import (
     ReconciliationSummaryResponse,
 )
 from app.schemas.workspace import (
+    PolicyGroundingListResponse,
+    PolicyGroundingRead,
     ReconciliationExceptionDetail,
     ReconciliationExceptionListItem,
     ReconciliationExceptionListResponse,
@@ -38,7 +40,7 @@ from app.services.resolution_planning_service import (
     ResolutionPlanningService,
     ResolutionPlanningValidationError,
 )
-from app.services.workspace_query import get_exception, list_exceptions
+from app.services.workspace_query import get_exception, list_exceptions, list_policy_grounding
 
 router = APIRouter(prefix="/reconciliation", tags=["reconciliation"])
 
@@ -93,6 +95,39 @@ def get_reconciliation_exception(
             detail=f"Reconciliation exception {exception_id} was not found.",
         )
     return ReconciliationExceptionDetail.model_validate(row)
+
+
+@router.get(
+    "/exceptions/{exception_id}/policy-grounding",
+    response_model=PolicyGroundingListResponse,
+)
+def list_exception_policy_grounding(
+    exception_id: UUID,
+    session: DbSession,
+) -> PolicyGroundingListResponse:
+    """Persisted AI policy explanations. Does not call Gemini."""
+    if get_exception(session, exception_id) is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Reconciliation exception {exception_id} was not found.",
+        )
+    rows = list_policy_grounding(session, exception_id)
+    items = [
+        PolicyGroundingRead(
+            id=row.id,
+            reconciliation_exception_id=row.reconciliation_exception_id,
+            status=row.status,
+            conclusion=row.conclusion,
+            explanation=row.explanation,
+            policy_support=row.policy_support,
+            limitations=row.limitations,
+            citations=list(row.citations or []),
+            created_at=row.created_at,
+            model=row.model,
+        )
+        for row in rows
+    ]
+    return PolicyGroundingListResponse(items=items, count=len(items))
 
 
 @router.post(

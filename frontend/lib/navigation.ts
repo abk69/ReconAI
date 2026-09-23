@@ -31,7 +31,7 @@ export const navigation: NavSection[] = [
     id: "intelligence",
     label: "Intelligence",
     items: [
-      { label: "Exceptions", href: "/exceptions", available: false },
+      { label: "Exceptions", href: "/exceptions", available: true },
       { label: "Risk & Anomalies", href: "/risk", available: false },
       { label: "Policy Intelligence", href: "/policies", available: false },
     ],
@@ -40,8 +40,8 @@ export const navigation: NavSection[] = [
     id: "workflow",
     label: "Workflow",
     items: [
-      { label: "Review Center", href: "/review", available: false },
-      { label: "Resolution", href: "/resolution", available: false },
+      { label: "Review Center", href: "/review", available: true },
+      { label: "Resolution", href: "/resolution", available: true },
     ],
   },
 ];

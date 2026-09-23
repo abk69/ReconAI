@@ -29,11 +29,11 @@ Below the `lg` breakpoint the sidebar collapses into a button-controlled navigat
 | `/goods-receipts` | Goods receipt list and detail |
 | `/invoices` | Invoice list and detail |
 | `/reconciliation` | Persisted reconciliation exceptions |
-| `/exceptions` | Coming later |
+| `/exceptions` | Exception queue |
 | `/risk` | Coming later |
 | `/policies` | Coming later |
-| `/review` | Coming later |
-| `/resolution` | Coming later |
+| `/review` | Extraction review center |
+| `/resolution` | Resolution plans |
 
 Navigation is defined once in `frontend/lib/navigation.ts`.
 
@@ -146,6 +146,53 @@ Exception detail labels the message as a deterministic reconciliation fact and r
 Related purchase orders, goods receipts, invoices, and exceptions are linked only when the API returns those ids.
 
 Empty lists and “backend unavailable” stay separate. A zero total is an empty state.
+
+## M10.4 — Exception and human review center
+
+The exception queue, extraction review center, and resolution center read persisted records. The browser does not re-run reconciliation, extraction, policy grounding, or resolution planning.
+
+### APIs
+
+Existing reads and actions:
+
+- `GET /reconciliation/exceptions` and `GET /reconciliation/exceptions/{id}`
+- `GET/POST /review/tasks` including approve, correct, reject, and promote
+- `GET /resolution-plans/{id}` plus actions, executions, audit, approve, reject, and execute
+
+Added reads, without new workflow rules:
+
+- `GET /review/tasks` accepts optional `q`, `limit`, and `offset`. Omitting `limit` still returns the full filtered queue. `total` is the filtered count.
+- `GET /resolution-plans` lists persisted plans. Optional `status` and `reconciliation_exception_id`.
+- `GET /resolution-plans/{id}/approvals` lists immutable human approval rows.
+- `GET /reconciliation/exceptions/{id}/policy-grounding` returns stored explanations only. It does not call Gemini and does not return provider metadata.
+
+### Exception workflow
+
+`/exceptions` is the operational queue. Filters are sent to the existing exception list. `/exceptions/{id}` shows the stored message as the reconciliation fact, stored evidence, source records, document ids, exception status, stored policy grounding, and links to resolution plans.
+
+If no grounding row exists, the page says policy grounding is unavailable. AI explanation text is labeled as an AI-assisted policy explanation and is kept separate from the fact.
+
+### Review workflow
+
+`/review` lists M5 tasks. Pending and in-review rows are marked as needing a person. `/review/{id}` shows the source document, the original extraction candidate, the reviewed candidate when one exists, stored evidence, and append-only decisions.
+
+Extracted values, reviewed values, and a promoted procurement record are separate sections. Promotion is the point at which the backend creates authoritative data.
+
+Approve, reject, correct, and promote call the existing M5 routes. The page waits for the response, shows that result, then reloads the task. It does not mark those actions successful before the API responds. Approve, reject, promote, and correction each use a confirmation that names the action.
+
+The correction form only includes editable fields present on the stored candidate, including line paths such as `lines[0].quantity`. The backend validates the values.
+
+### Resolution workflow
+
+`/resolution` lists stored plans in the order plan, actions, approval, execution, result. `/resolution/{id}` shows the proposal and its limitations as an AI-proposed plan, action type, stored parameters, whether approval is required, approval rows, executions, and the audit trail.
+
+Approve and reject record a human decision and do not execute. Execute is offered only when the loaded action is already approved, or when the stored action does not require approval and is still pending. The execute request sends an idempotency key only. Parameters shown in the confirmation are the stored parameters. A rejected action does not get an execute button.
+
+Audit events show event type, actor type (`SYSTEM`, `LLM`, or `HUMAN`), actor, time, and event data. LLM events are labeled as actor type LLM and are not described as authorization. Metadata keys that look like secrets are redacted in the browser in addition to backend sanitization.
+
+### Mutation behavior
+
+Consequential actions require an explicit click and a confirmation that names the action. Success text comes from the API response. The screen then reloads authoritative state. Approval, rejection, promotion, and execution are not applied optimistically.
 
 ## Commands
 

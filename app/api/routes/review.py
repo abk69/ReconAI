@@ -95,6 +95,7 @@ def _to_response(task: object) -> ReviewTaskResponse:
         document_type=doc_type,
         detected_type=detected,
         document_status=document.status if document is not None else None,
+        original_filename=document.original_filename if document is not None else None,
         candidate_summary=_candidate_summary(reviewed or original),
         reviewed_candidate=reviewed,
         original_candidate=original,
@@ -115,15 +116,34 @@ def list_review_tasks(
     task_status: Annotated[ReviewStatus | None, Query(alias="status")] = None,
     document_type: DocumentType | None = None,
     priority: ReviewPriority | None = None,
+    q: Annotated[str | None, Query(max_length=200)] = None,
+    limit: Annotated[int | None, Query(ge=1, le=100)] = None,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ) -> ReviewTaskListResponse:
     service = ReviewService(session)
+    needle = q.strip() if q else None
+    total = service.count_tasks(
+        status=task_status,
+        document_type=document_type,
+        priority=priority,
+        q=needle or None,
+    )
     tasks = service.list_tasks(
         status=task_status,
         document_type=document_type,
         priority=priority,
+        q=needle or None,
+        limit=limit,
+        offset=offset,
     )
     items = [_to_response(t) for t in tasks]
-    return ReviewTaskListResponse(items=items, count=len(items))
+    return ReviewTaskListResponse(
+        items=items,
+        count=len(items),
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/tasks/{task_id}", response_model=ReviewTaskResponse)

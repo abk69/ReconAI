@@ -38,6 +38,18 @@ const STATUS_TONE: Record<string, SignalTone> = {
   PARTIALLY_RECEIVED: "warning",
   EXTRACTION_FAILED: "danger",
   VALIDATION_FAILED: "danger",
+  PROPOSED: "info",
+  APPROVAL_REQUIRED: "warning",
+  EXECUTING: "info",
+  COMPLETED: "success",
+  FAILED: "danger",
+  NO_ACTION_RECOMMENDED: "neutral",
+  SUPPORTED: "info",
+  INSUFFICIENT_EVIDENCE: "warning",
+  CONFLICTING_POLICY: "danger",
+  PROVIDER_ERROR: "danger",
+  SUCCEEDED: "success",
+  RUNNING: "info",
 };
 
 export function EnumBadge({ value, kind }: { value: string; kind: "severity" | "status" }) {
