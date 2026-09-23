@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     app_env: str = Field(default="local", description="Environment name")
     debug: bool = Field(default=True, description="Enable debug mode")
     api_prefix: str = Field(default="", description="Optional API path prefix")
+    cors_origins: str = Field(
+        default="http://localhost:3000",
+        description="Comma-separated browser origins allowed to call the API (CORS_ORIGINS)",
+    )
 
     # Local default targets PostgreSQL. Override via DATABASE_URL; never commit secrets.
     database_url: str = Field(

@@ -40,6 +40,7 @@ Intelligent procurement reconciliation and exception-resolution platform.
 | M9.2 Batch detection & analytics | Done |
 | M9.3 Transparent risk scoring | Done |
 | M10.1 Next.js dashboard foundation | Done |
+| M10.2 Executive dashboard | Done |
 
 The dashboard shell lives in [`frontend/`](frontend/). See [`docs/M10_FRONTEND.md`](docs/M10_FRONTEND.md).
 

@@ -1,9 +1,11 @@
 """FastAPI application entrypoint."""
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import (
     anomalies,
+    dashboard,
     documents,
     goods_receipts,
     health,
@@ -32,7 +34,17 @@ def create_app() -> FastAPI:
         debug=settings.debug,
     )
     prefix = settings.api_prefix
+    origins = [item.strip() for item in settings.cors_origins.split(",") if item.strip()]
+    if origins:
+        application.add_middleware(
+            CORSMiddleware,
+            allow_origins=origins,
+            allow_credentials=False,
+            allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+            allow_headers=["Authorization", "Content-Type"],
+        )
     application.include_router(health.router, prefix=prefix)
+    application.include_router(dashboard.router, prefix=prefix)
     application.include_router(reconciliation.router, prefix=prefix)
     application.include_router(documents.router, prefix=prefix)
     application.include_router(review.router, prefix=prefix)

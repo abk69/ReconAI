@@ -23,7 +23,7 @@ Below the `lg` breakpoint the sidebar collapses into a button-controlled navigat
 | Path | M10.1 content |
 | --- | --- |
 | `/` | Redirects to `/dashboard` |
-| `/dashboard` | Landing page: description, health probe, honest placeholders |
+| `/dashboard` | Executive dashboard from `GET /dashboard/summary` |
 | `/documents` | Coming later |
 | `/purchase-orders` | Coming later |
 | `/goods-receipts` | Coming later |
@@ -50,10 +50,9 @@ Navigation is defined once in `frontend/lib/navigation.ts`.
 - `lib/api/config.ts` holds base URL and timeout.
 - `lib/api/client.ts` performs JSON requests with abort and timeout, and raises `ApiError`.
 - `lib/api/health.ts` calls the existing `GET /health` endpoint.
+- `lib/api/dashboard.ts` calls `GET /dashboard/summary`.
 
 Feature screens must use this client. Do not hardcode the API origin in components.
-
-No other backend routes are called in M10.1. The backend does not yet send CORS headers; the health probe runs in the browser and will show a clear error until CORS or a same-origin deployment exists. M10.1 does not add a proxy.
 
 ## Environment
 
@@ -74,6 +73,48 @@ No login or authorization exists. The API client leaves room for an `Authorizati
 Deterministic reconciliation (M2) is the source of financial facts. Anomaly detection and risk scoring (M9) are explainable signals, not fraud decisions. Policy reasoning (M7) is grounded explanation. Resolution planning (M8) proposes actions that still require human approval.
 
 Frontend presentation must distinguish deterministic financial facts, anomaly/risk signals, policy-grounded explanations, and AI-assisted recommendations.
+
+## M10.2 — Executive dashboard
+
+The dashboard reads `GET /dashboard/summary`. The browser does not count records or derive financial totals.
+
+### Endpoint
+
+Read-only. It does not run reconciliation, anomaly detection, risk scoring, Gemini, or resolution.
+
+Returned groups:
+
+| Field | Source |
+| --- | --- |
+| `documents` | `documents.status` counts |
+| `reconciliation_exceptions` | persisted exception status counts |
+| `open_exceptions` | newest `OPEN` and `IN_REVIEW` exceptions, with invoice, PO, and GRN numbers when linked |
+| `anomaly_signals` | persisted anomaly signal severity counts |
+| `risk_profiles` | latest persisted profile per entity and score version, counted by `risk_band` |
+| `review_tasks` / `pending_reviews` | M5 review task statuses; pending rows include the document filename |
+| `recent_activity` | bounded rows from documents, exceptions, review decisions, anomaly signals, risk profiles, and resolution audit events |
+
+Successful reconciliation matches are not stored as their own records, so the API does not report a matched-run total. Risk profiles are not recalculated. Historical profiles for the same entity are not all counted; the latest `as_of` row is used.
+
+`risk_note` states that risk scores are deterministic aggregations of anomaly signals and are not fraud probabilities.
+
+### Frontend behavior
+
+One summary request feeds every card. Refresh is a manual button. It does not poll.
+
+- First load shows a loading state.
+- A failed refresh keeps the last successful summary and shows an error.
+- Zero counts and empty lists are empty states, not errors.
+- If the API cannot be reached, the shell stays up and the data region shows that the backend is unavailable.
+
+Browser calls need `CORS_ORIGINS` to include the frontend origin (default `http://localhost:3000`). That is not a proxy and does not send credentials.
+
+### Metrics and layers
+
+Document status, reconciliation exception status, and review status are persisted workflow facts. Anomaly severities and risk bands are M9 signals. The dashboard does not present risk bands as fraud findings, and it does not present extraction or AI text as financial truth.
+
+Frontend presentation must distinguish deterministic financial facts, anomaly/risk signals, policy-grounded explanations, and AI-assisted recommendations.
+
 
 ## Commands
 
