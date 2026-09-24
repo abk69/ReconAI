@@ -30,7 +30,7 @@ function Breakdown({ profile }: { profile: RiskProfile }) {
   const types = profile.breakdown.type_breakdown ?? [];
   return (
     <div className="space-y-4">
-      <section className="rounded-md border border-line bg-surface p-5">
+      <section className="border-t border-white/8 pt-8">
         <h2 className="text-base font-semibold">Contribution breakdown</h2>
         <p className="mt-1 text-sm leading-6 text-ink-muted">
           Values are the stored M9 breakdown. This page does not recompute weights, multipliers, or
@@ -42,37 +42,26 @@ function Breakdown({ profile }: { profile: RiskProfile }) {
         {signals.length === 0 ? (
           <p className="mt-3 text-sm text-ink-muted">No contributing signals were stored on this profile.</p>
         ) : (
-          <div className="mt-3 overflow-x-auto">
-            <table className="min-w-full text-left text-sm">
-              <caption className="sr-only">Stored signal contributions</caption>
-              <thead>
-                <tr>
-                  {[
-                    "Type",
-                    "Severity",
-                    "Base weight",
-                    "Severity multiplier",
-                    "Recency multiplier",
-                    "Raw contribution",
-                    "Capped contribution",
-                    "Signal",
-                  ].map((header) => (
-                    <th key={header} scope="col" className="px-2 py-1 text-xs uppercase text-ink-muted">
-                      {header}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {signals.map((row) => (
-                  <SignalRow key={row.signal_id ?? row.signal_fingerprint} row={row} />
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <>
+            <p className="mt-2 text-xs text-ink-muted">
+              Bar length compares stored raw contributions on this profile. It is not a new score.
+            </p>
+            <ul className="mt-3">
+              {signals.map((row) => (
+                <SignalRow
+                  key={row.signal_id ?? row.signal_fingerprint}
+                  row={row}
+                  maxRaw={Math.max(
+                    0,
+                    ...signals.map((item) => numeric(item.raw_contribution) ?? 0),
+                  )}
+                />
+              ))}
+            </ul>
+          </>
         )}
       </section>
-      <section className="rounded-md border border-line bg-surface p-5">
+      <section className="border-t border-white/8 pt-8">
         <h2 className="text-base font-semibold">Type caps</h2>
         <p className="mt-1 text-sm text-ink-muted">
           Caps are stored per anomaly type. A blank capped contribution on a signal line means the
@@ -92,26 +81,39 @@ function Breakdown({ profile }: { profile: RiskProfile }) {
   );
 }
 
-function SignalRow({ row }: { row: ContributingSignal }) {
+function numeric(value: string | number | null | undefined): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function SignalRow({ row, maxRaw }: { row: ContributingSignal; maxRaw: number }) {
+  const raw = numeric(row.raw_contribution);
+  const width = raw === null || maxRaw <= 0 ? 0 : Math.max(0, Math.min(100, Math.round((raw / maxRaw) * 100)));
   return (
-    <tr className="border-t border-line">
-      <td className="px-2 py-1">{stored(row.anomaly_type)}</td>
-      <td className="px-2 py-1">{stored(row.severity)}</td>
-      <td className="px-2 py-1">{stored(row.base_weight)}</td>
-      <td className="px-2 py-1">{stored(row.severity_multiplier)}</td>
-      <td className="px-2 py-1">{stored(row.recency_multiplier)}</td>
-      <td className="px-2 py-1">{stored(row.raw_contribution)}</td>
-      <td className="px-2 py-1">{stored(row.capped_contribution)}</td>
-      <td className="px-2 py-1">
+    <li className="border-b border-white/8 py-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-3">
+        <p className="text-sm font-medium text-ink">{stored(row.anomaly_type)}</p>
+        <p className="text-sm tabular-nums text-ink">{stored(row.raw_contribution)}</p>
+      </div>
+      <div className="mt-2 h-px bg-white/10" aria-hidden="true">
+        <div className="h-px bg-brand" style={{ width: `${width}%` }} />
+      </div>
+      <p className="mt-2 text-xs text-ink-muted">
+        Severity {stored(row.severity)} · base weight {stored(row.base_weight)} · severity multiplier{" "}
+        {stored(row.severity_multiplier)} · recency multiplier {stored(row.recency_multiplier)} · capped{" "}
+        {stored(row.capped_contribution)}
+      </p>
+      <p className="mt-1 text-sm">
         {row.signal_id ? (
           <Link className="text-brand underline" href={`/risk/anomalies/${row.signal_id}`}>
-            {row.signal_id.slice(0, 8)}
+            Open signal {row.signal_id.slice(0, 8)}
           </Link>
         ) : (
-          "Not stored"
+          "Signal id was not stored"
         )}
-      </td>
-    </tr>
+      </p>
+    </li>
   );
 }
 
@@ -169,43 +171,16 @@ function RiskDetailBody({ entityType, id }: { entityType: string; id: string }) 
               ) : null}
             </div>
 
-            <form
-              className="rounded-md border border-line bg-surface p-5"
-              onSubmit={(event) => {
-                event.preventDefault();
-                const next = new URLSearchParams(params.toString());
-                if (draft) next.set("as_of", draft);
-                else next.delete("as_of");
-                router.push(next.size ? `?${next.toString()}` : "?");
-              }}
-            >
-              <h2 className="text-base font-semibold">Point-in-time risk</h2>
-              <p className="mt-1 text-sm leading-6 text-ink-muted">
-                as_of selects a stored profile. A score of 0 with no signals is a stored result when
-                that row exists. A missing row means no profile was saved for that date.
-              </p>
-              <label className="mt-3 flex flex-col gap-1 text-xs text-ink-muted">
-                Point-in-time date
-                <input
-                  type="date"
-                  className="rounded-md border border-line px-2 py-2 text-sm text-ink"
-                  value={draft}
-                  onChange={(event) => setDraft(event.target.value)}
-                />
-              </label>
-              <button type="submit" className="mt-3 rounded-md border border-line px-3 py-2 text-sm">
-                Show stored profile
-              </button>
-            </form>
-
             {data.current ? (
               <div className="space-y-4">
                 <RiskScore
                   score={data.current.score}
                   band={data.current.risk_band}
                   signalCount={data.current.signal_count}
+                  scoreVersion={data.current.score_version}
+                  asOf={data.current.as_of}
                 />
-                <dl className="grid gap-3 rounded-md border border-line bg-surface p-5 text-sm sm:grid-cols-2">
+                <dl className="grid gap-3 border-t border-white/8 pt-6 text-sm sm:grid-cols-2">
                   <div>
                     <dt className="text-xs uppercase text-ink-muted">Score version</dt>
                     <dd className="mt-1">{data.current.score_version}</dd>
@@ -227,14 +202,43 @@ function RiskDetailBody({ entityType, id }: { entityType: string; id: string }) 
                 <Breakdown profile={data.current} />
               </div>
             ) : (
-              <p className="rounded-md border border-line bg-surface p-5 text-sm" role="status">
+              <p className="border-t border-white/8 pt-6 text-sm" role="status">
                 {asOf
                   ? "No risk profile is stored for this point in time."
                   : "No risk profile is stored for this entity."}
               </p>
             )}
 
-            <section className="rounded-md border border-line bg-surface p-5">
+            <form
+              className="border-t border-white/8 pt-8"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const next = new URLSearchParams(params.toString());
+                if (draft) next.set("as_of", draft);
+                else next.delete("as_of");
+                router.push(next.size ? `?${next.toString()}` : "?");
+              }}
+            >
+              <h2 className="text-base font-semibold">Point-in-time risk</h2>
+              <p className="mt-1 text-sm leading-6 text-ink-muted">
+                as_of selects a stored profile. A score of 0 with no signals is a stored result when
+                that row exists. A missing row means no profile was saved for that date.
+              </p>
+              <label className="mt-3 flex flex-col gap-1 text-xs text-ink-muted">
+                Point-in-time date
+                <input
+                  type="date"
+                  className="min-h-10 w-full max-w-xs rounded-md border border-line bg-surface px-2 py-2 text-sm text-ink"
+                  value={draft}
+                  onChange={(event) => setDraft(event.target.value)}
+                />
+              </label>
+              <button type="submit" className="mt-3 min-h-10 rounded-lg border border-line px-3 py-2 text-sm">
+                Show stored profile
+              </button>
+            </form>
+
+            <section className="border-t border-white/8 pt-8">
               <h2 className="text-base font-semibold">Profile history</h2>
               <p className="mt-1 text-sm text-ink-muted">
                 Stored rows are immutable. Historical values were not recalculated from later signals.

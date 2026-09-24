@@ -16,11 +16,11 @@ export default async function ComingSoonPage({
 }) {
   const { slug } = await params;
   const href = `/${slug}`;
-  const item = findNavItem(href);
-  if (!item || item.available) {
+  const match = findNavItem(href);
+  if (!match || match.item.available) {
     notFound();
   }
-  const title = item.label;
+  const title = match.item.label;
 
   return (
     <div className="mx-auto max-w-3xl">

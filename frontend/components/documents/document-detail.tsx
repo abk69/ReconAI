@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState, type ReactNode } from "react";
 
 import { Lifecycle, buildLifecycle } from "@/components/documents/lifecycle";
+import { FlowRail } from "@/components/ui/flow-rail";
 import { RecordState } from "@/components/procurement/record-state";
 import { resourceError, useResource } from "@/components/procurement/use-resource";
 import { DataTable } from "@/components/ui/data-table";
@@ -26,7 +27,9 @@ import type { ReviewTask } from "@/types/workflow";
 type Bundle = {
   document: DocumentItem;
   understanding: UnderstandingResult | null;
+  understandingError: string | null;
   llm: LlmUnderstanding | null;
+  llmError: string | null;
   review: ReviewTask | null;
   vendor: Vendor | null;
   exceptions: ExceptionList | null;
@@ -45,17 +48,37 @@ async function optional<T>(request: Promise<T>): Promise<T | null> {
   }
 }
 
+async function aside<T>(
+  request: Promise<T>,
+  label: string,
+): Promise<{ value: T | null; error: string | null }> {
+  try {
+    return { value: await request, error: null };
+  } catch (error) {
+    if (isApiError(error) && error.status === 404) return { value: null, error: null };
+    return { value: null, error: resourceError(error, label) };
+  }
+}
+
 function Section({
   title,
   kicker,
+  tone,
   children,
 }: {
   title: string;
   kicker?: string;
+  tone?: "ai" | "authoritative";
   children: ReactNode;
 }) {
+  const toneClass =
+    tone === "ai"
+      ? "surface-ai rounded-md px-5 py-5"
+      : tone === "authoritative"
+        ? "surface-authoritative rounded-md px-5 py-5"
+        : "border-t border-white/8 pt-8";
   return (
-    <section className="rounded-md border border-line bg-surface p-5 shadow-card">
+    <section className={toneClass}>
       {kicker ? <p className="text-xs font-medium tracking-wide text-ink-muted uppercase">{kicker}</p> : null}
       <h2 className="text-base font-semibold text-ink">{title}</h2>
       <div className="mt-3 space-y-3 text-sm leading-6">{children}</div>
@@ -220,12 +243,14 @@ export function DocumentIntelligencePage({ id }: { id: string }) {
     id,
     async (signal) => {
       const document = await getDocument(id, signal);
-      const [understanding, llm, reviews, vendor] = await Promise.all([
-        optional(getUnderstanding(id, signal)),
-        optional(getLlmUnderstanding(id, signal)),
+      const [understandingResult, llmResult, reviews, vendor] = await Promise.all([
+        aside(getUnderstanding(id, signal), "Deterministic extraction"),
+        aside(getLlmUnderstanding(id, signal), "AI-assisted extraction"),
         listReviewTasks({ document_id: id, limit: 5 }, signal),
         document.vendor_id ? optional(getVendor(document.vendor_id, signal)) : Promise.resolve(null),
       ]);
+      const understanding = understandingResult.value;
+      const llm = llmResult.value;
       const linkedId = document.invoice_id
         ? { invoice_id: document.invoice_id }
         : document.purchase_order_id
@@ -237,7 +262,9 @@ export function DocumentIntelligencePage({ id }: { id: string }) {
       return {
         document,
         understanding,
+        understandingError: understandingResult.error,
         llm,
+        llmError: llmResult.error,
         review: reviews.items[0] ?? null,
         vendor,
         exceptions,
@@ -250,7 +277,7 @@ export function DocumentIntelligencePage({ id }: { id: string }) {
     <div className="mx-auto max-w-6xl space-y-5">
       <RecordState state={state} loadingTitle="Loading document" empty={null}>
         {(bundle) => {
-          const { document, understanding, llm, review, vendor, exceptions } = bundle;
+          const { document, understanding, understandingError, llm, llmError, review, vendor, exceptions } = bundle;
           const steps = buildLifecycle(document, understanding, review);
           const promotedLink = review?.promoted_entity_id && review.promoted_entity_type
             ? promotedHref(review.promoted_entity_type, review.promoted_entity_id)
@@ -270,9 +297,23 @@ export function DocumentIntelligencePage({ id }: { id: string }) {
                 </div>
                 <p className="mt-3 text-sm text-ink">Current document status: {document.status}</p>
               </div>
+              <FlowRail
+                label="Stored document stages"
+                steps={[
+                  { id: "intake", label: "Intake", stored: true },
+                  { id: "extraction", label: "Extraction", stored: understanding !== null },
+                  { id: "review", label: "Human review", stored: review !== null },
+                  { id: "ai", label: "AI assistance", stored: llm !== null },
+                  {
+                    id: "record",
+                    label: "Authoritative record",
+                    stored: Boolean(review?.promoted_entity_id),
+                  },
+                ]}
+              />
 
               {needsReview(document, review) && review ? (
-                <section className="rounded-md border border-line bg-surface p-5 shadow-card">
+                <section className="border-t border-white/8 pt-8">
                   <h2 className="text-base font-semibold text-ink">Human review required</h2>
                   <p className="mt-2 text-sm leading-6 text-ink-muted">
                     Stored review status {review.status}. Consequential review actions stay in the review center.
@@ -283,7 +324,7 @@ export function DocumentIntelligencePage({ id }: { id: string }) {
                 </section>
               ) : null}
 
-              <dl className="grid gap-4 rounded-md border border-line bg-surface p-5 sm:grid-cols-2">
+              <dl className="grid gap-4 border-t border-white/8 pt-8 sm:grid-cols-2">
                 <div>
                   <dt className="text-xs font-medium tracking-wide text-ink-muted uppercase">Document id</dt>
                   <dd className="mt-1 break-all text-sm">{document.id}</dd>
@@ -331,6 +372,7 @@ export function DocumentIntelligencePage({ id }: { id: string }) {
               </Section>
 
               <Section title="Extraction candidate" kicker="2">
+                {understandingError ? <p role="alert">{understandingError}</p> : null}
                 {understanding ? (
                   <>
                     <p>Extraction outcome: {understanding.outcome}</p>
@@ -340,7 +382,7 @@ export function DocumentIntelligencePage({ id }: { id: string }) {
                     <RawBlock title="Raw candidate" value={understanding.candidate} />
                     {understanding.has_raw_extraction ? <RawExtraction documentId={document.id} /> : <p>No raw extraction was stored.</p>}
                   </>
-                ) : (
+                ) : understandingError ? null : (
                   <p>No extraction result is stored for this document.</p>
                 )}
               </Section>
@@ -388,7 +430,7 @@ export function DocumentIntelligencePage({ id }: { id: string }) {
                 )}
               </Section>
 
-              <Section title="Promoted authoritative record" kicker="5">
+              <Section title="Promoted authoritative record" kicker="Authoritative record" tone="authoritative">
                 {review?.promoted_entity_id ? (
                   <>
                     <p>
@@ -408,7 +450,8 @@ export function DocumentIntelligencePage({ id }: { id: string }) {
                 )}
               </Section>
 
-              <Section title="Gemini-assisted extraction" kicker="AI-assisted extraction">
+              <Section title="Gemini-assisted extraction" kicker="AI-assisted" tone="ai">
+                {llmError ? <p role="alert">{llmError}</p> : null}
                 {llm ? (
                   <>
                     <p>This stored result is AI-assisted extraction. It is not authoritative procurement data.</p>
@@ -468,7 +511,7 @@ export function DocumentIntelligencePage({ id }: { id: string }) {
                     <EvidenceList items={llm.evidence ?? []} empty="No AI evidence was stored." />
                     <RawBlock title="AI candidate" value={llm.candidate} />
                   </>
-                ) : (
+                ) : llmError ? null : (
                   <p>No Gemini-assisted extraction is stored for this document.</p>
                 )}
               </Section>

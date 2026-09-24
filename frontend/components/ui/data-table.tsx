@@ -18,30 +18,50 @@ export function DataTable<T>({
   caption: string;
 }) {
   return (
-    <div className="overflow-x-auto rounded-md border border-line" tabIndex={0}>
-      <table className="min-w-full border-collapse text-left text-sm">
-        <caption className="sr-only">{caption}</caption>
-        <thead className="border-b border-line bg-canvas">
-          <tr>
-            {columns.map((column) => (
-              <th key={column.key} scope="col" className="px-3 py-2 text-xs font-medium tracking-wide text-ink-muted uppercase">
-                {column.header}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={rowKey(row)} className="border-b border-line last:border-0">
+    <div>
+      <ul className="space-y-6 md:hidden">
+        {rows.map((row) => (
+          <li key={rowKey(row)} className="border-b border-line pb-5">
+            <dl className="space-y-3">
               {columns.map((column) => (
-                <td key={column.key} className="px-3 py-2 align-top text-ink">
-                  {column.cell(row)}
-                </td>
+                <div key={column.key}>
+                  <dt className="text-[11px] font-medium tracking-[0.14em] text-ink-faint uppercase">{column.header}</dt>
+                  <dd className="mt-1 text-sm text-ink">{column.cell(row)}</dd>
+                </div>
+              ))}
+            </dl>
+          </li>
+        ))}
+      </ul>
+      <div className="hidden overflow-x-auto md:block" tabIndex={0}>
+        <table className="min-w-full border-collapse text-left text-sm">
+          <caption className="sr-only">{caption}</caption>
+          <thead>
+            <tr className="border-b border-line">
+              {columns.map((column) => (
+                <th
+                  key={column.key}
+                  scope="col"
+                  className="px-2 py-3 text-[11px] font-medium tracking-[0.14em] text-ink-faint uppercase"
+                >
+                  {column.header}
+                </th>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={rowKey(row)} className="border-b border-white/5 transition-colors duration-200 last:border-0 hover:bg-white/[0.03]">
+                {columns.map((column) => (
+                  <td key={column.key} className="px-2 py-3.5 align-top text-ink">
+                    {column.cell(row)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -67,7 +87,7 @@ export function Pager({
       <div className="flex gap-2">
         <button
           type="button"
-          className="rounded-md border border-line bg-surface px-3 py-1.5 disabled:opacity-50"
+          className="min-h-10 rounded-lg border border-line px-3 py-1.5 text-ink transition-colors duration-150 hover:bg-hover disabled:opacity-40"
           disabled={offset <= 0}
           onClick={() => onPage(Math.max(0, offset - limit))}
         >
@@ -75,7 +95,7 @@ export function Pager({
         </button>
         <button
           type="button"
-          className="rounded-md border border-line bg-surface px-3 py-1.5 disabled:opacity-50"
+          className="min-h-10 rounded-lg border border-line px-3 py-1.5 text-ink transition-colors duration-150 hover:bg-hover disabled:opacity-40"
           disabled={offset + limit >= total}
           onClick={() => onPage(offset + limit)}
         >

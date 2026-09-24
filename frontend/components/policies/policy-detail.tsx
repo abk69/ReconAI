@@ -35,7 +35,7 @@ export function PolicyDetailPage({ id }: { id: string }) {
                 does not merge them into one document.
               </p>
             </div>
-            <dl className="grid gap-4 rounded-md border border-line bg-surface p-5 sm:grid-cols-2">
+            <dl className="grid gap-4 border-t border-white/8 pt-6 sm:grid-cols-2">
               <div>
                 <dt className="text-xs font-medium tracking-wide text-ink-muted uppercase">Policy id</dt>
                 <dd className="mt-1 break-all text-sm">{policy.id}</dd>

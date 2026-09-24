@@ -65,7 +65,7 @@ export function ConfirmDialog({
         </button>
         <button
           type="button"
-          className="rounded-md bg-brand px-3 py-2 text-sm text-white disabled:opacity-60"
+          className="min-h-10 rounded-lg bg-brand px-3 py-2 text-sm text-on-brand disabled:opacity-60"
           disabled={busy}
           onClick={onConfirm}
         >

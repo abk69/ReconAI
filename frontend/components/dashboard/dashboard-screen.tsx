@@ -81,13 +81,16 @@ export function DashboardScreen() {
   const summary = state.kind === "ready" ? state.summary : state.kind === "error" ? state.summary : null;
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-ink">Dashboard</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-ink-muted">
-            Procurement reconciliation intelligence from persisted records. Counts come from the
-            API. This page does not calculate financial totals.
+    <div className="mx-auto max-w-6xl space-y-12">
+      <div className="flex flex-wrap items-end justify-between gap-6">
+        <div className="max-w-3xl">
+          <p className="text-[11px] font-medium tracking-[0.2em] text-ink-faint uppercase">ReconAI</p>
+          <h1 className="mt-3 text-4xl font-semibold tracking-tight text-ink sm:text-5xl">
+            Every stored procurement signal, in one workspace.
+          </h1>
+          <p className="mt-4 max-w-2xl text-base leading-7 text-ink-muted">
+            Documents, reconciliation exceptions, policy evidence, and risk signals from persisted
+            records. Counts come from the API. This page does not calculate financial totals.
           </p>
           {state.kind === "ready" ? (
             <p className="mt-2 text-xs text-ink-muted">
@@ -97,7 +100,7 @@ export function DashboardScreen() {
         </div>
         <button
           type="button"
-          className="rounded-md border border-line bg-surface px-3 py-2 text-sm font-medium text-ink shadow-card disabled:opacity-60"
+          className="min-h-10 rounded-lg border border-line bg-elevated px-3 py-2 text-sm font-medium text-ink transition-colors duration-150 hover:bg-hover disabled:opacity-60"
           disabled={state.kind === "loading" || refreshing}
           onClick={() => load(false)}
         >
@@ -119,11 +122,13 @@ export function DashboardScreen() {
       {summary ? (
         <>
           <KpiRow summary={summary} />
-          <div className="grid gap-4 lg:grid-cols-2">
-            <ReconciliationPanel summary={summary} />
+          <div>
             <ExceptionsPanel summary={summary} />
-            <RiskPanel summary={summary} />
-            <DocumentsPanel summary={summary} />
+            <div className="mt-10 grid gap-x-16 lg:grid-cols-2">
+              <ReconciliationPanel summary={summary} />
+              <RiskPanel summary={summary} />
+              <DocumentsPanel summary={summary} />
+            </div>
           </div>
           <ReviewPanel summary={summary} />
           <ActivityPanel summary={summary} />

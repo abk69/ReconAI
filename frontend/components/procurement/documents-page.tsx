@@ -35,6 +35,45 @@ const EXTRACTION_OUTCOMES = [
 ];
 const REVIEW_STATUSES = ["PENDING", "IN_REVIEW", "APPROVED", "CORRECTED", "REJECTED"];
 
+const PROCESSING_STAGES: [string, string[]][] = [
+  ["Intake", ["UPLOADED", "VALIDATED", "VALIDATION_FAILED"]],
+  ["Extraction", ["EXTRACTION_PENDING", "EXTRACTING", "EXTRACTED", "NORMALIZED", "EXTRACTION_FAILED"]],
+  ["Review", ["REVIEW_REQUIRED", "REVIEW_REJECTED"]],
+  ["Authoritative", ["READY_FOR_RECONCILIATION"]],
+];
+
+function ProcessingSignals({ items }: { items: { status: string }[] }) {
+  const stages = PROCESSING_STAGES.map(([label, statuses]) => ({
+    label,
+    count: items.filter((item) => statuses.includes(item.status)).length,
+  }));
+  const known = stages.reduce((sum, stage) => sum + stage.count, 0);
+  const other = items.length - known;
+  const max = Math.max(1, ...stages.map((stage) => stage.count), other);
+  return (
+    <section aria-label="Processing signals">
+      <h2 className="text-[11px] font-medium tracking-[0.16em] text-ink-faint uppercase">Processing signals</h2>
+      <p className="mt-2 max-w-2xl text-sm text-ink-muted">
+        Stored document statuses on this page. This is not a system-wide total.
+      </p>
+      <ol className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {stages.map((stage, index) => (
+          <li key={stage.label}>
+            <p className="text-[11px] tracking-[0.14em] text-ink-faint uppercase">
+              {String(index + 1).padStart(2, "0")} {stage.label}
+            </p>
+            <p className="mt-1 text-2xl font-semibold tabular-nums">{stage.count}</p>
+            <div className="mt-2 h-px bg-white/10" aria-hidden="true">
+              <div className="h-px bg-brand" style={{ width: `${Math.round((stage.count / max) * 100)}%` }} />
+            </div>
+          </li>
+        ))}
+      </ol>
+      {other > 0 ? <p className="mt-3 text-sm text-ink-muted">{other} documents on this page use another stored status.</p> : null}
+    </section>
+  );
+}
+
 function DocumentsBody() {
   const query = useListQuery();
   const key = `documents:${query.q}:${query.documentType}:${query.status}:${query.extractionOutcome}:${query.reviewStatus}:${query.offset}`;
@@ -57,10 +96,11 @@ function DocumentsBody() {
   );
 
   return (
-    <div className="mx-auto max-w-6xl space-y-5">
+    <div className="mx-auto max-w-6xl space-y-8">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-ink">Documents</h1>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-ink-muted">
+        <p className="text-[11px] font-medium tracking-[0.2em] text-ink-faint uppercase">Document intelligence</p>
+        <h1 className="mt-3 text-4xl font-semibold tracking-tight text-ink">Documents</h1>
+        <p className="mt-3 max-w-2xl text-sm leading-6 text-ink-muted">
           Persisted intake records. Current document status, extraction outcome, and review status
           are stored facts. An extraction candidate is not an authoritative procurement record.
           Upload is not available on this page.
@@ -88,7 +128,8 @@ function DocumentsBody() {
         }
       >
         {(data) => (
-          <div className="space-y-3">
+          <div className="space-y-8">
+            <ProcessingSignals items={data.items} />
             <DataTable
               caption="Documents"
               rowKey={(row) => row.id}

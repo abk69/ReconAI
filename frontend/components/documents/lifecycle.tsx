@@ -126,20 +126,23 @@ export function buildLifecycle(
 
 export function Lifecycle({ steps }: { steps: LifecycleStep[] }) {
   return (
-    <section className="rounded-md border border-line bg-surface p-5 shadow-card">
+    <section className="border-t border-white/8 pt-8">
       <h2 className="text-base font-semibold text-ink">Derived workflow view</h2>
       <p className="mt-1 text-sm leading-6 text-ink-muted">
         Steps follow the stored document status and related records. A time is shown only when that
         record stores one. This view does not replace the current document status.
       </p>
       <ol className="mt-4 space-y-3">
-        {steps.map((step) => (
+        {steps.map((step, index) => (
           <li
             key={step.label}
-            className="border-l-2 border-line pl-3"
+            className={`rounded-lg border px-3 py-2 ${
+              step.state === "Not reached" ? "border-line bg-canvas" : "border-brand/25 bg-success-soft/40"
+            }`}
             aria-current={step.state === "Current" ? "step" : undefined}
           >
             <p className="text-sm font-medium text-ink">
+              <span className="mr-2 text-[11px] tracking-[0.14em] text-ink-faint">{String(index + 1).padStart(2, "0")}</span>
               {step.label}
               <span className="ml-2 text-xs font-normal tracking-wide text-ink-muted uppercase">
                 {step.state}

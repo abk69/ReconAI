@@ -3,35 +3,144 @@
 @theme {
   --font-sans: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
 
-  --color-canvas: #f4f6f8;
-  --color-surface: #ffffff;
-  --color-ink: #1c2430;
-  --color-ink-muted: #5c6778;
-  --color-line: #d8dee6;
-  --color-brand: #1f4e79;
-  --color-brand-strong: #163a5c;
+  --color-canvas: #050505;
+  --color-secondary: #08090a;
+  --color-surface: #0d0f10;
+  --color-elevated: #121416;
+  --color-hover: #171a1c;
+  --color-ink: #f4f7f6;
+  --color-ink-muted: #b7c0c6;
+  --color-ink-faint: #a7b0b6;
+  --color-line: rgb(255 255 255 / 0.06);
+  --color-brand: #6ee7b7;
+  --color-brand-strong: #34d399;
+  --color-on-brand: #052117;
 
-  --color-success: #1f7a4d;
-  --color-success-soft: #e7f5ee;
-  --color-warning: #8a5a12;
-  --color-warning-soft: #fbf3e4;
-  --color-danger: #9b2c2c;
-  --color-danger-soft: #fdecec;
-  --color-info: #1d4f91;
-  --color-info-soft: #e8f1fb;
-  --color-neutral: #4b5565;
-  --color-neutral-soft: #eef1f4;
+  --color-success: #6ee7b7;
+  --color-success-soft: rgb(52 211 153 / 0.12);
+  --color-warning: #fbbf24;
+  --color-warning-soft: rgb(245 158 11 / 0.12);
+  --color-danger: #fca5a5;
+  --color-danger-soft: rgb(248 113 113 / 0.12);
+  --color-info: #67e8f9;
+  --color-info-soft: rgb(34 211 238 / 0.1);
+  --color-neutral: #c5ced4;
+  --color-neutral-soft: rgb(255 255 255 / 0.04);
 
-  --shadow-card: 0 1px 2px rgb(28 36 48 / 0.06);
+  --shadow-card: 0 16px 40px rgb(0 0 0 / 0.35);
+}
+
+html {
+  color-scheme: dark;
 }
 
 html,
 body {
-  background: var(--color-canvas);
+  background: #050505;
+  color: var(--color-ink);
+}
+
+body {
+  background-image:
+    radial-gradient(980px 520px at 8% -8%, rgb(61 220 151 / 0.07), transparent 58%),
+    radial-gradient(720px 420px at 100% 0%, rgb(45 212 191 / 0.045), transparent 52%),
+    radial-gradient(900px 480px at 50% 120%, rgb(0 0 0 / 0.45), transparent 46%);
+  background-attachment: fixed;
+}
+
+body::before {
+  content: "";
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background-image:
+    linear-gradient(rgb(255 255 255 / 0.008) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 255 255 / 0.008) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse at 40% 20%, black 10%, transparent 72%);
+}
+
+body > * {
+  position: relative;
+  z-index: 1;
+}
+
+::selection {
+  background: rgb(110 231 183 / 0.28);
   color: var(--color-ink);
 }
 
 :focus-visible {
   outline: 2px solid var(--color-brand);
   outline-offset: 2px;
+}
+
+main {
+  animation: rise 220ms ease-out;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+.skeleton {
+  background-image: linear-gradient(
+    90deg,
+    rgb(255 255 255 / 0.04) 0%,
+    rgb(255 255 255 / 0.09) 45%,
+    rgb(255 255 255 / 0.04) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-out infinite;
+}
+
+.reveal {
+  animation: rise 280ms ease-out;
+}
+
+.surface-fact {
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.08),
+    0 0 0 1px rgb(255 255 255 / 0.04);
+}
+
+.surface-ai {
+  background:
+    radial-gradient(420px 160px at 0% 0%, rgb(110 231 183 / 0.08), transparent 70%),
+    linear-gradient(180deg, rgb(255 255 255 / 0.03), rgb(255 255 255 / 0.01)),
+    #0d0f10;
+}
+
+.surface-authoritative {
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.1),
+    0 0 0 1px rgb(110 231 183 / 0.18);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

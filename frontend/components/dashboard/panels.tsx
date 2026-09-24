@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { AlertTriangle, ClipboardCheck, FileText, Shield } from "lucide-react";
 
 import { CountBars } from "@/components/dashboard/count-bars";
 import { EmptyState } from "@/components/ui/state";
@@ -25,12 +26,12 @@ function Panel({
   children: ReactNode;
 }) {
   return (
-    <section aria-labelledby={id} className="rounded-md border border-line bg-surface p-5 shadow-card">
-      <h2 id={id} className="text-base font-semibold text-ink">
+    <section aria-labelledby={id} className="reveal border-t border-white/8 pt-8">
+      <h2 id={id} className="text-sm font-medium tracking-[0.16em] text-ink-faint uppercase">
         {title}
       </h2>
-      {note ? <p className="mt-1 text-sm leading-6 text-ink-muted">{note}</p> : null}
-      <div className="mt-4">{children}</div>
+      {note ? <p className="mt-2 max-w-3xl text-sm leading-6 text-ink-muted">{note}</p> : null}
+      <div className="mt-5">{children}</div>
     </section>
   );
 }
@@ -41,34 +42,51 @@ export function KpiRow({ summary }: { summary: DashboardSummary }) {
       label: "Documents",
       value: summary.documents.total,
       detail: "Persisted document records",
+      icon: FileText,
     },
     {
       label: "Open exceptions",
       value: summary.open_exception_count,
       detail: "Reconciliation exceptions with status OPEN",
+      icon: AlertTriangle,
     },
     {
       label: "High / critical risk",
       value: summary.high_or_critical_risk_count,
       detail: "Latest persisted risk profile per entity",
+      icon: Shield,
     },
     {
       label: "Pending review",
       value: summary.pending_review_count,
       detail: "Review tasks with status PENDING",
+      icon: ClipboardCheck,
     },
   ];
 
+  const [primary, ...rest] = cards;
+  const PrimaryIcon = primary.icon;
   return (
-    <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-      {cards.map((card) => (
-        <li key={card.label} className="rounded-md border border-line bg-surface px-4 py-4 shadow-card">
-          <p className="text-xs font-medium tracking-wide text-ink-muted uppercase">{card.label}</p>
-          <p className="mt-2 text-2xl font-semibold tabular-nums text-ink">{card.value}</p>
-          <p className="mt-1 text-xs leading-5 text-ink-muted">{card.detail}</p>
-        </li>
-      ))}
-    </ul>
+    <div className="reveal grid gap-10 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:items-end">
+      <div>
+        <p className="flex items-center gap-2 text-[11px] font-medium tracking-[0.16em] text-ink-faint uppercase">
+          <PrimaryIcon aria-hidden="true" size={14} className="text-brand" />
+          {primary.label}
+        </p>
+        <p className="mt-3 text-7xl font-semibold tracking-tight tabular-nums text-ink">
+          {String(primary.value).padStart(2, "0")}
+        </p>
+        <p className="mt-2 max-w-sm text-sm leading-6 text-ink-muted">{primary.detail}</p>
+      </div>
+      <ul className="divide-y divide-white/8">
+        {rest.map((card) => (
+          <li key={card.label} className="flex items-baseline justify-between gap-4 py-3">
+            <span className="text-[11px] font-medium tracking-[0.14em] text-ink-faint uppercase">{card.label}</span>
+            <span className="text-2xl font-semibold tabular-nums text-ink">{String(card.value).padStart(2, "0")}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -93,7 +111,7 @@ export function ExceptionsPanel({ summary }: { summary: DashboardSummary }) {
     <Panel
       id="exceptions-heading"
       title="Open exceptions"
-      note="OPEN and IN_REVIEW exceptions, newest first. Detail screens are not available yet."
+      note="OPEN and IN_REVIEW exceptions, newest first."
     >
       {summary.open_exceptions.length === 0 ? (
         <EmptyState
@@ -101,25 +119,26 @@ export function ExceptionsPanel({ summary }: { summary: DashboardSummary }) {
           description="No reconciliation exceptions have been recorded with status OPEN or IN_REVIEW."
         />
       ) : (
-        <ul className="divide-y divide-line">
+        <ul>
           {summary.open_exceptions.map((item) => (
-            <li key={item.id} className="py-3 first:pt-0 last:pb-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <EnumBadge value={item.exception_type} kind="status" />
+            <li key={item.id} className="border-b border-white/8 py-5">
+              <div className="flex flex-wrap items-baseline justify-between gap-3">
+                <Link className="text-base font-medium text-ink" href={`/exceptions/${item.id}`}>
+                  {readableLabel(item.exception_type)}
+                </Link>
                 <EnumBadge value={item.severity} kind="severity" />
-                <EnumBadge value={item.status} kind="status" />
               </div>
-              <p className="mt-2 text-sm text-ink">{item.message}</p>
-              <p className="mt-1 text-xs text-ink-muted">
-                {item.invoice_number ? `Invoice ${item.invoice_number}` : "No invoice reference"}
-                {item.po_number ? ` · PO ${item.po_number}` : ""}
-                {item.grn_number ? ` · GRN ${item.grn_number}` : ""}
-                {" · "}
-                {formatTimestamp(item.created_at)}
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-ink-muted">{item.message}</p>
+              <p className="mt-2 text-xs text-ink-muted">
+                <EnumBadge value={item.status} kind="status" />
+                <span className="ml-2">
+                  {item.invoice_number ? `Invoice ${item.invoice_number}` : "No invoice reference"}
+                  {item.po_number ? ` · PO ${item.po_number}` : ""}
+                  {item.grn_number ? ` · GRN ${item.grn_number}` : ""}
+                  {" · "}
+                  {formatTimestamp(item.created_at)}
+                </span>
               </p>
-              <Link href="/exceptions" className="mt-1 inline-block text-sm text-brand underline">
-                Exceptions section
-              </Link>
             </li>
           ))}
         </ul>
@@ -157,8 +176,8 @@ export function RiskPanel({ summary }: { summary: DashboardSummary }) {
                   {readableLabel(profile.entity_type)} · score {profile.score}
                 </p>
                 <p className="text-xs text-ink-muted">
-                  as of {profile.as_of} · {profile.signal_count} signal
-                  {profile.signal_count === 1 ? "" : "s"} · {profile.score_version}
+                  as of {profile.as_of} · {profile.signal_count}{" "}
+                  {profile.signal_count === 1 ? "signal" : "signals"} · {profile.score_version}
                 </p>
               </div>
               {isRiskBand(profile.risk_band) ? <RiskBandBadge band={profile.risk_band} /> : profile.risk_band}

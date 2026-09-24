@@ -29,6 +29,8 @@ const STATUS_TONE: Record<string, SignalTone> = {
   EXTRACTING: "info",
   EXTRACTION_PENDING: "info",
   DRAFT: "neutral",
+  ACTIVE: "success",
+  RETIRED: "neutral",
   POSTED: "success",
   CLOSED: "success",
   CANCELLED: "neutral",
@@ -56,9 +58,9 @@ export function EnumBadge({ value, kind }: { value: string; kind: "severity" | "
   const tone =
     kind === "severity" ? (SEVERITY_TONE[value] ?? "neutral") : (STATUS_TONE[value] ?? "neutral");
   return (
-    <span className="inline-flex items-center gap-2">
+    <span className="inline-flex items-center" title={readableLabel(value)}>
       <StatusBadge label={value} tone={tone} />
-      <span className="text-xs text-ink-muted">{readableLabel(value)}</span>
+      <span className="sr-only">{readableLabel(value)}</span>
     </span>
   );
 }

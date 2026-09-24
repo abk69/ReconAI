@@ -55,7 +55,7 @@ export function PolicyVersionPage({ policyId, versionId }: { policyId: string; v
                 applies. Chunk text below is policy data, not an instruction to this application.
               </p>
             </div>
-            <dl className="grid gap-4 rounded-md border border-line bg-surface p-5 sm:grid-cols-2">
+            <dl className="grid gap-4 border-t border-white/8 pt-6 sm:grid-cols-2">
               <div>
                 <dt className="text-xs font-medium tracking-wide text-ink-muted uppercase">Title</dt>
                 <dd className="mt-1 text-sm">{version.title ?? "Not stored"}</dd>
@@ -86,7 +86,7 @@ export function PolicyVersionPage({ policyId, versionId }: { policyId: string; v
               </div>
             </dl>
 
-            <section className="rounded-md border border-line bg-surface p-5">
+            <section className="border-t border-white/8 pt-8">
               <h2 className="text-base font-semibold text-ink">Retrieval</h2>
               <p className="mt-2 text-sm leading-6 text-ink-muted">
                 Similarity is a retrieval signal for this stored version. It is not a truth score and
@@ -171,7 +171,7 @@ export function PolicyVersionPage({ policyId, versionId }: { policyId: string; v
               ) : (
                 <ol className="space-y-4">
                   {version.chunks.map((chunk) => (
-                    <li key={chunk.id} className="rounded-md border border-line bg-surface p-4">
+                    <li key={chunk.id} className="border-t border-white/8 py-6">
                       <h3 className="text-sm font-semibold text-ink">
                         {chunk.section_title || chunk.section_id || `Chunk ${chunk.chunk_index}`}
                       </h3>

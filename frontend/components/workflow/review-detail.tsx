@@ -7,6 +7,7 @@ import { RecordState } from "@/components/procurement/record-state";
 import { resourceError, useResource } from "@/components/procurement/use-resource";
 import { ConfirmDialog } from "@/components/workflow/confirm-dialog";
 import { EnumBadge } from "@/components/ui/enum-badge";
+import { FlowRail } from "@/components/ui/flow-rail";
 import {
   approveReviewTask,
   correctReviewTask,
@@ -42,16 +43,18 @@ function ValueTable({
   title,
   caption,
   candidate,
+  emphasis = false,
 }: {
   title: string;
   caption: string;
   candidate: Record<string, unknown> | null;
+  emphasis?: boolean;
 }) {
   const fields = scalarEntries(candidate);
   const lines = lineRows(candidate);
   return (
-    <section className="rounded-md border border-line bg-surface p-5">
-      <h2 className="text-base font-semibold">{title}</h2>
+    <section className={emphasis ? "border-l border-brand/50 pl-4" : ""}>
+      <h2 className="text-[11px] font-medium tracking-[0.16em] text-ink-faint uppercase">{title}</h2>
       <p className="mt-1 text-sm text-ink-muted">{caption}</p>
       {fields.length === 0 ? (
         <p className="mt-3 text-sm text-ink-muted">No candidate fields were stored.</p>
@@ -172,6 +175,24 @@ export function ReviewDetail({ id }: { id: string }) {
                   <EnumBadge value={item.priority} kind="severity" />
                 </div>
               </div>
+              <FlowRail
+                label="Stored review stages"
+                steps={[
+                  { id: "document", label: "Document", stored: Boolean(item.document_id) },
+                  { id: "candidate", label: "Candidate", stored: item.original_candidate != null },
+                  {
+                    id: "review",
+                    label: "Human review",
+                    stored: item.status === "IN_REVIEW" || item.status === "PENDING" || Boolean(item.completed_at),
+                  },
+                  {
+                    id: "decision",
+                    label: "Decision",
+                    stored: item.status === "APPROVED" || item.status === "CORRECTED" || item.status === "REJECTED",
+                  },
+                  { id: "promotion", label: "Promotion", stored: Boolean(item.promoted_entity_id) },
+                ]}
+              />
 
               {notice ? (
                 <p className="rounded-md border border-line bg-surface p-3 text-sm" role="status">
@@ -223,20 +244,23 @@ export function ReviewDetail({ id }: { id: string }) {
                 </dl>
               </section>
 
-              <ValueTable
-                title="Extracted value"
-                caption="Original extraction candidate. This is not a reviewed or promoted value."
-                candidate={item.original_candidate}
-              />
-              <ValueTable
-                title="Reviewed or corrected value"
-                caption={
-                  item.reviewed_candidate
-                    ? "Candidate after recorded human corrections."
-                    : "No reviewed candidate is stored yet."
-                }
-                candidate={item.reviewed_candidate}
-              />
+              <div className="grid gap-10 lg:grid-cols-2">
+                <ValueTable
+                  title="System candidate"
+                  caption="Original extraction candidate. This is not a reviewed or promoted value."
+                  candidate={item.original_candidate}
+                />
+                <ValueTable
+                  title="Reviewed candidate"
+                  emphasis={Boolean(item.reviewed_candidate)}
+                  caption={
+                    item.reviewed_candidate
+                      ? "Candidate after recorded human corrections."
+                      : "No reviewed candidate is stored yet."
+                  }
+                  candidate={item.reviewed_candidate}
+                />
+              </div>
 
               <section className="rounded-md border border-line bg-surface p-5">
                 <h2 className="text-base font-semibold">Authoritative promoted data</h2>
@@ -327,7 +351,7 @@ export function ReviewDetail({ id }: { id: string }) {
                 <h2 className="text-base font-semibold">Review actions</h2>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {canApprove ? (
-                    <button type="button" className="rounded-md bg-brand px-3 py-2 text-sm text-white" onClick={() => setDialog("approve")}>
+                    <button type="button" className="min-h-10 rounded-lg bg-brand px-3 py-2 text-sm text-on-brand" onClick={() => setDialog("approve")}>
                       Approve extraction
                     </button>
                   ) : null}

@@ -6,7 +6,7 @@ import { Suspense } from "react";
 import { FilterBar, useListQuery } from "@/components/procurement/filters";
 import { RecordState } from "@/components/procurement/record-state";
 import { useResource } from "@/components/procurement/use-resource";
-import { DataTable, Pager } from "@/components/ui/data-table";
+import { Pager } from "@/components/ui/data-table";
 import { EnumBadge } from "@/components/ui/enum-badge";
 import { LoadingState } from "@/components/ui/state";
 import { listPolicies } from "@/lib/api/policies";
@@ -56,57 +56,48 @@ function LibraryBody() {
       >
         {(data) => (
           <div className="space-y-3">
-            <DataTable
-              caption="Policy documents"
-              rowKey={(row) => row.id}
-              rows={data.items}
-              columns={[
-                {
-                  key: "name",
-                  header: "Policy",
-                  cell: (row) => (
-                    <Link className="text-brand underline" href={`/policies/${row.id}`}>
-                      {row.name}
-                    </Link>
-                  ),
-                },
-                {
-                  key: "status",
-                  header: "Active version status",
-                  cell: (row) =>
-                    row.active_version_count === 1 && row.active_status ? (
+            <ul>
+              {data.items.map((row) => (
+                <li key={row.id} className="border-b border-white/8 py-6">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <Link className="block text-2xl font-semibold tracking-tight text-ink" href={`/policies/${row.id}`}>
+                        {row.name}
+                      </Link>
+                    </div>
+                    {row.active_version_count === 1 && row.active_status ? (
                       <EnumBadge value={row.active_status} kind="status" />
-                    ) : row.active_version_count > 1 ? (
-                      "Multiple active versions"
                     ) : (
-                      "No single active version"
-                    ),
-                },
-                {
-                  key: "version",
-                  header: "Active version",
-                  cell: (row) => row.active_version_label ?? "Not selected",
-                },
-                {
-                  key: "effective",
-                  header: "Effective dates",
-                  cell: (row) =>
-                    row.effective_from
-                      ? `${row.effective_from}${row.effective_to ? ` to ${row.effective_to}` : ""}`
-                      : "See versions",
-                },
-                {
-                  key: "count",
-                  header: "Versions",
-                  cell: (row) => row.version_count,
-                },
-                {
-                  key: "created",
-                  header: "Created",
-                  cell: (row) => formatTimestamp(row.created_at),
-                },
-              ]}
-            />
+                      <p className="text-sm text-ink-muted">
+                        {row.active_version_count > 1 ? "Multiple active versions" : "No single active version"}
+                      </p>
+                    )}
+                  </div>
+                  <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
+                    <div>
+                      <dt className="text-[11px] tracking-wide text-ink-faint uppercase">Active version</dt>
+                      <dd className="mt-1">{row.active_version_label ?? "Not selected"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-[11px] tracking-wide text-ink-faint uppercase">Effective dates</dt>
+                      <dd className="mt-1">
+                        {row.effective_from
+                          ? `${row.effective_from}${row.effective_to ? ` to ${row.effective_to}` : ""}`
+                          : "See versions"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-[11px] tracking-wide text-ink-faint uppercase">Versions</dt>
+                      <dd className="mt-1 tabular-nums">{row.version_count}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-[11px] tracking-wide text-ink-faint uppercase">Created</dt>
+                      <dd className="mt-1">{formatTimestamp(row.created_at)}</dd>
+                    </div>
+                  </dl>
+                </li>
+              ))}
+            </ul>
             <Pager offset={query.offset} limit={LIMIT} total={data.total} onPage={query.setOffset} />
           </div>
         )}

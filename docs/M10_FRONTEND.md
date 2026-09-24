@@ -299,6 +299,12 @@ A stored resolution plan is labeled AI-proposed. The exception page shows the re
 
 The page states the chain: reconciliation fact, policy evidence, AI-assisted explanation, AI-proposed resolution, human approval.
 
+## M10.8 — Visual system
+
+The frontend uses an AMOLED surface system: near-black canvas, translucent borders, and an emerald accent reserved for navigation, focus, and stored-positive signals. Shared tables, badges, empty states, error states, and loading skeletons carry that system. Motion is CSS only, and `prefers-reduced-motion` shortens it.
+
+Workflow rails mark a stage only when the stored record supports it. Financial evidence stays visually separate from AI-assisted grounding and AI-proposed plans. Policy chunk text remains quoted data. No new metrics, API calls, or Gemini usage were added.
+
 ## Commands
 
 ```bash

@@ -130,12 +130,24 @@ export function ResolutionDetail({ id }: { id: string }) {
                   <EnumBadge value={plan.status} kind="status" />
                 </div>
               </div>
-              <ol className="grid gap-2 text-sm sm:grid-cols-5">
-                {["Plan", "Actions", "Approval", "Execution", "Result"].map((step) => (
-                  <li key={step} className="rounded-md border border-line bg-surface px-3 py-2">
-                    {step}
-                  </li>
-                ))}
+              <ol aria-label="Stored resolution status" className="space-y-0">
+                {["PROPOSED", "APPROVAL_REQUIRED", "APPROVED", "EXECUTING", "COMPLETED"].map((status) => {
+                  const current = plan.status === status;
+                  return (
+                    <li key={status} className="flex gap-4" aria-current={current ? "step" : undefined}>
+                      <span className="flex flex-col items-center">
+                        <span className={`mt-1 h-2.5 w-2.5 rounded-full ${current ? "bg-brand" : "border border-white/30"}`} />
+                        <span className="w-px flex-1 bg-white/10" aria-hidden="true" />
+                      </span>
+                      <div className="pb-5">
+                        <p className={`text-sm tracking-[0.12em] uppercase ${current ? "text-ink" : "text-ink-faint"}`}>
+                          {status.replaceAll("_", " ")}
+                        </p>
+                        <p className="text-xs text-ink-muted">{current ? "Stored status" : "Not the stored status"}</p>
+                      </div>
+                    </li>
+                  );
+                })}
               </ol>
               {note ? (
                 <p className="rounded-md border border-line bg-canvas p-3 text-sm" role="status">
@@ -214,7 +226,7 @@ export function ResolutionDetail({ id }: { id: string }) {
                         <div className="mt-3 flex flex-wrap gap-2">
                           {allowApproval ? (
                             <>
-                              <button type="button" className="rounded-md bg-brand px-3 py-2 text-sm text-white" onClick={() => open("approve", item)}>
+                              <button type="button" className="min-h-10 rounded-lg bg-brand px-3 py-2 text-sm text-on-brand" onClick={() => open("approve", item)}>
                                 Approve this proposed action
                               </button>
                               <button type="button" className="rounded-md border border-line px-3 py-2 text-sm" onClick={() => open("reject", item)}>

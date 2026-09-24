@@ -25,7 +25,7 @@ export function AnomalyDetailPage({ id }: { id: string }) {
                 <EnumBadge value={item.severity} kind="severity" />
               </div>
             </div>
-            <dl className="grid gap-3 rounded-md border border-line bg-surface p-5 text-sm sm:grid-cols-2">
+            <dl className="grid gap-3 border-t border-white/8 pt-6 text-sm sm:grid-cols-2">
               <div>
                 <dt className="text-xs uppercase text-ink-muted">Anomaly signal score</dt>
                 <dd className="mt-1">{item.score}</dd>
@@ -44,7 +44,7 @@ export function AnomalyDetailPage({ id }: { id: string }) {
                 </dd>
               </div>
             </dl>
-            <section className="rounded-md border border-line bg-surface p-5">
+            <section className="border-t border-white/8 pt-8">
               <h2 className="text-base font-semibold">Affected records</h2>
               <ul className="mt-3 space-y-2 text-sm">
                 <li>

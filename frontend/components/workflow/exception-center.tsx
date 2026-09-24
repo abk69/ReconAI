@@ -151,28 +151,20 @@ export function ExceptionCenterDetail({ id }: { id: string }) {
         {(item) => (
           <>
             <div>
-              <p className="text-xs font-medium tracking-wide text-ink-muted uppercase">
-                Reconciliation fact
+              <p className="text-[11px] font-medium tracking-[0.18em] text-ink-faint uppercase">
+                Exception / {item.id.slice(0, 8)}
               </p>
-              <h1 className="mt-1 text-2xl font-semibold text-ink">{readableLabel(item.exception_type)}</h1>
-              <p className="mt-1 text-xs text-ink-muted">{item.exception_type}</p>
-              <p className="mt-3 text-sm leading-6 text-ink">{item.message}</p>
-              <div className="mt-3 flex flex-wrap gap-2">
+              <h1 className="mt-3 text-4xl font-semibold tracking-tight text-ink">{readableLabel(item.exception_type)}</h1>
+              <div className="mt-4 flex flex-wrap gap-2">
                 <EnumBadge value={item.severity} kind="severity" />
                 <EnumBadge value={item.status} kind="status" />
               </div>
+              <p className="mt-5 max-w-3xl text-lg leading-8 text-ink">{item.message}</p>
             </div>
-            <ol className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-5">
-              {[
-                "Reconciliation fact",
-                "Policy evidence",
-                "AI-assisted explanation",
-                "AI-proposed resolution",
-                "Human approval",
-              ].map((step, index) => (
-                <li key={step} className="rounded-md border border-line bg-surface px-3 py-2">
-                  <span className="text-xs text-ink-muted">{index + 1}</span>
-                  <p className="font-medium text-ink">{step}</p>
+            <ol className="flex flex-wrap gap-x-4 gap-y-2 text-[11px] tracking-[0.14em] text-ink-faint uppercase">
+              {["Fact", "Evidence", "Policy", "AI interpretation", "Human action"].map((step, index) => (
+                <li key={step}>
+                  {String(index + 1).padStart(2, "0")} {step}
                 </li>
               ))}
             </ol>
@@ -259,9 +251,9 @@ export function ExceptionCenterDetail({ id }: { id: string }) {
               )}
             </section>
 
-            <section className="rounded-md border border-line bg-surface p-5" aria-labelledby="grounding-heading">
-              <p className="text-xs font-medium tracking-wide text-ink-muted uppercase">
-                AI-assisted policy explanation
+            <section className="surface-ai rounded-md border border-line bg-surface p-5" aria-labelledby="grounding-heading">
+              <p className="text-xs font-medium tracking-wide text-brand uppercase">
+                ✦ AI-assisted policy explanation
               </p>
               <h2 id="grounding-heading" className="mt-1 text-base font-semibold">
                 Policy intelligence
@@ -348,9 +340,9 @@ export function ExceptionCenterDetail({ id }: { id: string }) {
                 : null}
             </section>
 
-            <section className="rounded-md border border-line bg-surface p-5">
-              <p className="text-xs font-medium tracking-wide text-ink-muted uppercase">
-                AI-proposed resolution plan
+            <section className="surface-ai rounded-md border border-line bg-surface p-5">
+              <p className="text-xs font-medium tracking-wide text-brand uppercase">
+                ✦ AI-proposed resolution plan
               </p>
               <h2 className="mt-1 text-base font-semibold">Proposed resolution</h2>
               <p className="mt-2 text-sm leading-6 text-ink-muted">

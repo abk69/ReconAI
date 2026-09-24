@@ -63,7 +63,7 @@ export function FilterBar({
           )}
         </label>
       ))}
-      <button type="submit" className="rounded-md border border-line bg-surface px-3 py-1.5 text-sm">
+      <button type="submit" className="min-h-10 rounded-lg border border-line bg-elevated px-3 py-1.5 text-sm text-ink">
         Apply
       </button>
     </form>

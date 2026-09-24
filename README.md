@@ -46,6 +46,7 @@ Intelligent procurement reconciliation and exception-resolution platform.
 | M10.5 Risk and anomaly intelligence | Done |
 | M10.6 Document intelligence | Done |
 | M10.7 Policy intelligence | Done |
+| M10.8 Visual system | Done |
 
 The dashboard shell lives in [`frontend/`](frontend/). See [`docs/M10_FRONTEND.md`](docs/M10_FRONTEND.md).
 
