@@ -10,6 +10,8 @@ export type PolicyCitation = {
   page_number?: number | null;
   content_hash?: string;
   similarity?: number | null;
+  content?: string;
+  excerpt?: string;
 };
 
 export type PolicyGroundingItem = {

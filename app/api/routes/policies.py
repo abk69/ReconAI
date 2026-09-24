@@ -5,10 +5,11 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
+from app.domain.enums import PolicyVersionStatus
 from app.embeddings.base import EmbeddingProviderError
 from app.schemas.policy import (
     PolicyChunkBatchCreate,
@@ -19,6 +20,7 @@ from app.schemas.policy import (
     PolicyDocumentRead,
     PolicyEmbedResponse,
     PolicyIngestionResponse,
+    PolicyLibraryItem,
     PolicySearchHit,
     PolicySearchRequest,
     PolicySearchResponse,
@@ -26,6 +28,7 @@ from app.schemas.policy import (
     PolicyVersionDetailRead,
     PolicyVersionListResponse,
     PolicyVersionRead,
+    PolicyVersionSummary,
 )
 from app.services.policy_embedding_service import PolicyEmbeddingService
 from app.services.policy_ingestion_service import PolicyIngestionService
@@ -70,9 +73,36 @@ def create_policy(body: PolicyDocumentCreate, session: DbSession) -> PolicyDocum
 
 
 @router.get("", response_model=PolicyDocumentListResponse)
-def list_policies(session: DbSession) -> PolicyDocumentListResponse:
-    items = [PolicyDocumentRead.model_validate(d) for d in PolicyService(session).list_documents()]
-    return PolicyDocumentListResponse(items=items, count=len(items))
+def list_policies(
+    session: DbSession,
+    version_status: PolicyVersionStatus | None = None,
+    limit: Annotated[int | None, Query(ge=1, le=100)] = None,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> PolicyDocumentListResponse:
+    page, total, grouped = PolicyService(session).list_library(
+        version_status=version_status,
+        limit=limit,
+        offset=offset,
+    )
+    items: list[PolicyLibraryItem] = []
+    for doc in page:
+        versions = grouped.get(doc.id, [])
+        active = [row for row in versions if row.status == PolicyVersionStatus.ACTIVE.value]
+        chosen = active[0] if len(active) == 1 else None
+        base = PolicyDocumentRead.model_validate(doc)
+        items.append(
+            PolicyLibraryItem(
+                **base.model_dump(),
+                version_count=len(versions),
+                active_version_count=len(active),
+                active_version_id=chosen.id if chosen else None,
+                active_version_label=chosen.version_label if chosen else None,
+                active_status=PolicyVersionStatus(chosen.status) if chosen else None,
+                effective_from=chosen.effective_from if chosen else None,
+                effective_to=chosen.effective_to if chosen else None,
+            )
+        )
+    return PolicyDocumentListResponse(items=items, count=len(items), total=total)
 
 
 @router.get("/{policy_id}", response_model=PolicyDocumentRead)
@@ -118,7 +148,14 @@ def list_policy_versions(policy_id: UUID, session: DbSession) -> PolicyVersionLi
         versions = PolicyService(session).list_versions(policy_id)
     except PolicyNotFoundError as exc:
         raise _http_error(exc) from exc
-    items = [PolicyVersionRead.model_validate(v) for v in versions]
+    counts = PolicyService(session).chunk_counts([version.id for version in versions])
+    items = [
+        PolicyVersionSummary(
+            **PolicyVersionRead.model_validate(version).model_dump(),
+            chunk_count=counts.get(version.id, 0),
+        )
+        for version in versions
+    ]
     return PolicyVersionListResponse(items=items, count=len(items))
 
 

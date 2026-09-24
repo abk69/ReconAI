@@ -81,6 +81,7 @@ export function useListQuery() {
     documentType: params.get("document_type") ?? "",
     extractionOutcome: params.get("extraction_outcome") ?? "",
     reviewStatus: params.get("review_status") ?? "",
+    versionStatus: params.get("version_status") ?? "",
     severity: params.get("severity") ?? "",
     exceptionType: params.get("exception_type") ?? "",
     offset: safeOffset,

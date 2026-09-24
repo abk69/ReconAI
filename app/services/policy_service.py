@@ -6,7 +6,7 @@ import hashlib
 from datetime import date
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -59,6 +59,45 @@ class PolicyService:
         return list(
             self._session.scalars(select(PolicyDocument).order_by(PolicyDocument.name)).all()
         )
+
+    def list_library(
+        self,
+        *,
+        version_status: PolicyVersionStatus | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> tuple[list[PolicyDocument], int, dict[UUID, list[PolicyVersion]]]:
+        """Paged documents with their stored versions.
+
+        Several ACTIVE versions are counted and not reduced to one row.
+        """
+        docs = self.list_documents()
+        doc_ids = [doc.id for doc in docs]
+        grouped: dict[UUID, list[PolicyVersion]] = {doc_id: [] for doc_id in doc_ids}
+        if doc_ids:
+            versions = self._session.scalars(
+                select(PolicyVersion)
+                .where(PolicyVersion.policy_document_id.in_(doc_ids))
+                .order_by(PolicyVersion.effective_from, PolicyVersion.version_label)
+            ).all()
+            for version in versions:
+                grouped[version.policy_document_id].append(version)
+        if version_status is not None:
+            wanted = version_status.value
+            docs = [doc for doc in docs if any(row.status == wanted for row in grouped[doc.id])]
+        total = len(docs)
+        page = docs[offset:] if limit is None else docs[offset : offset + limit]
+        return page, total, grouped
+
+    def chunk_counts(self, version_ids: list[UUID]) -> dict[UUID, int]:
+        if not version_ids:
+            return {}
+        rows = self._session.execute(
+            select(PolicyChunk.policy_version_id, func.count())
+            .where(PolicyChunk.policy_version_id.in_(version_ids))
+            .group_by(PolicyChunk.policy_version_id)
+        ).all()
+        return {version_id: int(count) for version_id, count in rows}
 
     def get_document(self, policy_id: UUID) -> PolicyDocument:
         doc = self._session.get(PolicyDocument, policy_id)

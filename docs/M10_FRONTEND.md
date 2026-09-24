@@ -31,7 +31,7 @@ Below the `lg` breakpoint the sidebar collapses into a button-controlled navigat
 | `/reconciliation` | Persisted reconciliation exceptions |
 | `/exceptions` | Exception queue |
 | `/risk` | Risk and anomaly intelligence |
-| `/policies` | Coming later |
+| `/policies` | Policy library, version detail, and retrieval |
 | `/review` | Extraction review center |
 | `/resolution` | Resolution plans |
 
@@ -272,6 +272,32 @@ The extraction section shows the stored candidate, outcome, extractor version, v
 Review status, reviewer, decisions, and an Open review link go to `/review/{id}`. This page does not approve, correct, reject, or promote.
 
 Gemini-assisted extraction shows provider, model, prompt version, invocation status, application quality, quality-gate reasons, stored comparison, evidence check, and token usage when those fields are stored. Comparison rows are the persisted agreements and disagreements. The page does not choose a correct candidate. Provider metadata and API keys are not requested.
+
+## M10.7 — Policy intelligence
+
+`/policies` replaces the placeholder. The browser reads stored policy documents, versions, and chunks. It does not embed text, call Gemini, or decide which policy applies.
+
+### Library and versions
+
+`GET /policies` returns each document with stored version counts. `active_version_label` and `active_status` are set only when exactly one version is `ACTIVE`. Several active versions stay unresolved. Optional `version_status`, `limit`, and `offset` filter and page that list. Omitting `limit` still returns the full filtered list.
+
+`/policies/{id}` lists versions with status, effective dates, source filename, and chunk count. `/policies/{id}/versions/{versionId}` shows one version and its chunks. Chunk text is labeled policy data. It is quoted source content, including text that looks like an instruction.
+
+`ACTIVE` is the stored version status. Effective dates remain visible.
+
+### Retrieval
+
+Search is an explicit submit on the version page. It calls the existing `POST /policies/{id}/versions/{versionId}/search`. Similarity is labeled as a retrieval signal. A retrieval result is not a grounded conclusion. The page does not search on load.
+
+### Grounding and resolution
+
+`/exceptions/{id}` keeps section-level loads for stored policy grounding and resolution plans. It does not call `POST …/policy-explanation` or `POST …/resolution-plan`.
+
+Grounding status is shown as stored: `SUPPORTED`, `INSUFFICIENT_EVIDENCE`, `CONFLICTING_POLICY`, or `PROVIDER_ERROR`. Insufficient evidence is abstention, not an error. A conflict lists the cited versions and does not pick one. A provider error says the explanation could not be generated. Citations render only the fields stored on the grounding result, with links when policy and version ids are present. An empty grounding list says no grounding is stored.
+
+A stored resolution plan is labeled AI-proposed. The exception page shows the reasoning summary, limitations, action type, stored parameters, approval requirement, and status, then links to `/resolution/{id}` for approval and execution.
+
+The page states the chain: reconciliation fact, policy evidence, AI-assisted explanation, AI-proposed resolution, human approval.
 
 ## Commands
 

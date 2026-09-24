@@ -27,11 +27,27 @@ class PolicyDocumentRead(BaseModel):
     updated_at: datetime
 
 
+class PolicyLibraryItem(PolicyDocumentRead):
+    """Document plus stored version facts.
+
+    Active label and status are set only when one version is ACTIVE.
+    """
+
+    version_count: int = 0
+    active_version_count: int = 0
+    active_version_id: UUID | None = None
+    active_version_label: str | None = None
+    active_status: PolicyVersionStatus | None = None
+    effective_from: date | None = None
+    effective_to: date | None = None
+
+
 class PolicyDocumentListResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    items: list[PolicyDocumentRead]
+    items: list[PolicyLibraryItem]
     count: int
+    total: int
 
 
 class PolicyVersionCreate(BaseModel):
@@ -169,10 +185,14 @@ class PolicyVersionRead(BaseModel):
     updated_at: datetime
 
 
+class PolicyVersionSummary(PolicyVersionRead):
+    chunk_count: int = 0
+
+
 class PolicyVersionListResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    items: list[PolicyVersionRead]
+    items: list[PolicyVersionSummary]
     count: int
 
 
