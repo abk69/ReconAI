@@ -1,5 +1,6 @@
 import { apiConfig } from "@/lib/api/config";
-import { ApiError } from "@/lib/api/errors";
+import { ApiError, categoryForStatus, safeDetail } from "@/lib/api/errors";
+import { recordDiagnostic } from "@/lib/observability/diagnostics";
 
 type RequestOptions = {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
@@ -13,28 +14,38 @@ function joinUrl(path: string): string {
   return `${apiConfig.baseUrl}${normalized}`;
 }
 
-async function readErrorMessage(response: Response): Promise<{ message: string; detail?: unknown }> {
-  const text = await response.text();
+function safeServerMessage(response: Response, text: string): string {
   if (!text) {
-    return { message: `Request failed (${response.status})` };
+    return `Request failed (${response.status})`;
   }
   try {
     const parsed: unknown = JSON.parse(text);
     if (parsed && typeof parsed === "object" && "detail" in parsed) {
       const detail = (parsed as { detail: unknown }).detail;
-      const message = typeof detail === "string" ? detail : `Request failed (${response.status})`;
-      return { message, detail };
+      if (typeof detail === "string") {
+        return safeDetail(detail) ?? `Request failed (${response.status})`;
+      }
     }
   } catch {
-    return { message: text.slice(0, 300) };
+    return safeDetail(text) ?? `Request failed (${response.status})`;
   }
-  return { message: text.slice(0, 300) };
+  return `Request failed (${response.status})`;
+}
+
+function fail(method: string, status: number, message: string, category = categoryForStatus(status)): never {
+  recordDiagnostic({ method, status, category });
+  throw new ApiError({ status, message, category });
 }
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const method = options.method ?? "GET";
   const controller = new AbortController();
   const timeoutMs = options.timeoutMs ?? apiConfig.defaultTimeoutMs;
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
 
   if (options.signal) {
     if (options.signal.aborted) {
@@ -53,38 +64,41 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     // Do not read secrets from NEXT_PUBLIC_* variables.
 
     const response = await fetch(joinUrl(path), {
-      method: options.method ?? "GET",
+      method,
       headers: Object.keys(headers).length > 0 ? headers : undefined,
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
       signal: controller.signal,
     });
 
     if (!response.ok) {
-      const parsed = await readErrorMessage(response);
-      throw new ApiError({
-        status: response.status,
-        message: parsed.message,
-        detail: parsed.detail,
-      });
+      const text = await response.text();
+      fail(method, response.status, safeServerMessage(response, text));
     }
 
     if (response.status === 204) {
       return undefined as T;
     }
 
-    return (await response.json()) as T;
+    const text = await response.text();
+    if (!text) {
+      return undefined as T;
+    }
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      fail(method, response.status, "Response was not valid JSON.", "malformed");
+    }
   } catch (error) {
     if (error instanceof ApiError) {
       throw error;
     }
-    if (error instanceof DOMException && error.name === "AbortError") {
-      throw new ApiError({
-        status: 0,
-        message: "The request timed out or was cancelled.",
-      });
+    if (options.signal?.aborted) {
+      throw error;
     }
-    const message = error instanceof Error ? error.message : "Network request failed.";
-    throw new ApiError({ status: 0, message });
+    if (timedOut || (error instanceof DOMException && error.name === "AbortError")) {
+      fail(method, 0, "The request timed out.", "timeout");
+    }
+    fail(method, 0, "Network request failed.", "unavailable");
   } finally {
     clearTimeout(timer);
   }

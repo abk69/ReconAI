@@ -17,7 +17,7 @@ import {
   ShoppingCart,
   X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { navigation } from "@/lib/navigation";
 
@@ -89,6 +89,7 @@ function Brand() {
 
 export function Sidebar() {
   const [open, setOpen] = useState(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) {
@@ -100,6 +101,7 @@ export function Sidebar() {
       }
     }
     window.addEventListener("keydown", onKey);
+    dialogRef.current?.focus();
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
@@ -129,10 +131,12 @@ export function Sidebar() {
           />
           <div
             id="mobile-nav"
+            ref={dialogRef}
             role="dialog"
             aria-modal="true"
             aria-label="Navigation"
-            className="absolute inset-y-0 left-0 flex w-[min(20rem,88vw)] flex-col border-r border-line bg-secondary px-3 py-5 shadow-card"
+            tabIndex={-1}
+            className="absolute inset-y-0 left-0 flex w-[min(20rem,88vw)] flex-col border-r border-line bg-secondary px-3 py-5 shadow-card outline-none"
           >
             <Brand />
             <div className="min-h-0 flex-1 overflow-y-auto">

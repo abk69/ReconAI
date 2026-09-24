@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 
 import { ErrorState, LoadingState } from "@/components/ui/state";
+import { explainApiError } from "@/lib/api/errors";
 import { getHealth } from "@/lib/api/health";
-import { isApiError } from "@/lib/api/errors";
 import type { HealthResponse } from "@/types/api";
 
 type Status =
@@ -20,10 +20,7 @@ export function SystemStatus() {
     getHealth(controller.signal)
       .then((health) => setStatus({ kind: "ok", health }))
       .catch((error: unknown) => {
-        const message = isApiError(error)
-          ? error.message
-          : "The health check could not be completed.";
-        setStatus({ kind: "error", message });
+        setStatus({ kind: "error", message: explainApiError(error, "Health check") });
       });
     return () => controller.abort();
   }, []);
@@ -40,13 +37,13 @@ export function SystemStatus() {
         {status.kind === "loading" ? (
           <LoadingState
             title="Checking backend"
-            description="Waiting for GET /health."
+            description="Checking whether the service is reachable."
           />
         ) : null}
         {status.kind === "error" ? (
           <ErrorState
             title="Backend not reachable"
-            description={`${status.message} Confirm the API is running and NEXT_PUBLIC_API_BASE_URL is set. No financial data was requested.`}
+            description={status.message}
           />
         ) : null}
         {status.kind === "ok" ? (

@@ -41,6 +41,7 @@ export function ConfirmDialog({
     <dialog
       ref={ref}
       aria-labelledby={titleId}
+      aria-describedby={`${titleId}-description`}
       className="w-[min(32rem,calc(100vw-2rem))] rounded-md border border-line bg-surface p-5 text-ink shadow-card backdrop:bg-ink/40"
       onCancel={(event) => {
         event.preventDefault();
@@ -52,12 +53,14 @@ export function ConfirmDialog({
       <h2 id={titleId} className="text-lg font-semibold">
         {title}
       </h2>
-      <p className="mt-2 text-sm leading-6 text-ink-muted">{description}</p>
+      <p id={`${titleId}-description`} className="mt-2 text-sm leading-6 text-ink-muted">
+        {description}
+      </p>
       {children}
       <div className="mt-4 flex flex-wrap justify-end gap-2">
         <button
           type="button"
-          className="rounded-md border border-line px-3 py-2 text-sm"
+          className="min-h-10 rounded-md border border-line px-3 py-2 text-sm"
           disabled={busy}
           onClick={onCancel}
         >
@@ -69,7 +72,7 @@ export function ConfirmDialog({
           disabled={busy}
           onClick={onConfirm}
         >
-          {busy ? "Waiting for the API…" : confirmLabel}
+          {busy ? "Saving" : confirmLabel}
         </button>
       </div>
     </dialog>

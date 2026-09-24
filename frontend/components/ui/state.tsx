@@ -20,11 +20,12 @@ export function LoadingState({ title, description }: StatePanelProps) {
 }
 
 export function ErrorState({ title, description }: StatePanelProps) {
-  const unavailable = /unavailable|failed to fetch/i.test(`${title} ${description}`);
+  const unavailable = /could not reach the service/i.test(description);
+  const timedOut = /took too long/i.test(description);
   return (
     <div role="alert" className="rounded-xl border border-danger/30 bg-danger-soft px-4 py-5">
       <p className="text-[11px] font-medium tracking-[0.14em] text-danger uppercase">
-        {unavailable ? "Backend unavailable" : "Request failed"}
+        {unavailable ? "Service unavailable" : timedOut ? "Timed out" : "Request failed"}
       </p>
       <p className="mt-2 text-sm font-medium text-ink">{title}</p>
       <p className="mt-1 text-sm leading-6 text-ink-muted">{description}</p>

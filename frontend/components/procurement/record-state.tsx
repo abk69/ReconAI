@@ -15,7 +15,7 @@ export function RecordState<T>({
   children: (data: T) => ReactNode;
 }) {
   if (state.kind === "loading") {
-    return <LoadingState title={loadingTitle} description="Waiting for the API." />;
+    return <LoadingState title={loadingTitle} description="Reading stored records." />;
   }
   if (state.kind === "error") {
     return <ErrorState title="Request failed" description={state.message} />;

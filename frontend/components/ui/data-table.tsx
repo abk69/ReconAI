@@ -33,7 +33,7 @@ export function DataTable<T>({
           </li>
         ))}
       </ul>
-      <div className="hidden overflow-x-auto md:block" tabIndex={0}>
+      <div className="hidden overflow-x-auto md:block" tabIndex={0} aria-label={caption}>
         <table className="min-w-full border-collapse text-left text-sm">
           <caption className="sr-only">{caption}</caption>
           <thead>

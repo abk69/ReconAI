@@ -305,6 +305,32 @@ The frontend uses an AMOLED surface system: near-black canvas, translucent borde
 
 Workflow rails mark a stage only when the stored record supports it. Financial evidence stays visually separate from AI-assisted grounding and AI-proposed plans. Policy chunk text remains quoted data. No new metrics, API calls, or Gemini usage were added.
 
+## M10.9 — Production readiness
+
+The visual system is unchanged. This pass hardens failures, headers, and diagnostics.
+
+### API origin
+
+Development keeps `NEXT_PUBLIC_API_BASE_URL=http://localhost:8000` in `frontend/.env.example`. Production must set that variable at build time to the public API origin. The fallback in `lib/config/env.ts` is localhost only when the variable is unset. Do not put keys, tokens, or database URLs in `NEXT_PUBLIC_*`.
+
+### Errors
+
+`lib/api/client.ts` maps timeouts, network failures, HTTP 400/401/403/404/409/422/429/5xx, and unreadable JSON to `ApiError`. Pages show `explainApiError` text. Response bodies that look like traces, markup, or secrets are dropped. `app/error.tsx` keeps the shell when a page throws. `app/global-error.tsx` covers a broken root layout.
+
+### Headers
+
+`next.config.ts` sends `nosniff`, a strict referrer policy, `X-Frame-Options: DENY`, a locked-down permissions policy, and a Content-Security-Policy. `connect-src` includes the configured API origin. Page responses use `Cache-Control: private, no-store` so procurement views are not treated as fresh cache. Hashed `/_next/static` assets are left to Next's own caching.
+
+CSP allows `'unsafe-inline'` scripts and styles because this app does not attach nonces. Development also allows `'unsafe-eval'` for the Next dev server. `upgrade-insecure-requests` is omitted so a local `http://localhost:8000` API still connects.
+
+### Diagnostics
+
+`lib/observability/diagnostics.ts` keeps a short in-memory list of route, method, status, category, and time. It does not record payloads, documents, policy text, or credentials. No third-party monitor is installed.
+
+### Mutations
+
+Opening a page still only issues reads. Approval, rejection, promotion, execution, and policy search stay behind an explicit submit. Confirmations are unchanged.
+
 ## Commands
 
 ```bash

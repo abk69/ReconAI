@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { isApiError } from "@/lib/api/errors";
+import { explainApiError } from "@/lib/api/errors";
 
 export type ResourceState<T> =
   | { kind: "loading" }
@@ -10,16 +10,7 @@ export type ResourceState<T> =
   | { kind: "error"; message: string };
 
 export function resourceError(error: unknown, label: string): string {
-  if (isApiError(error)) {
-    if (error.status === 0) {
-      return `Backend unavailable. ${error.message}`;
-    }
-    if (error.status === 404) {
-      return `${label} was not found.`;
-    }
-    return `${label} request failed (${error.status}). ${error.message}`;
-  }
-  return `${label} request failed before a response was received.`;
+  return explainApiError(error, label);
 }
 
 export function useResource<T>(

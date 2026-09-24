@@ -12,8 +12,8 @@ import {
   RiskPanel,
 } from "@/components/dashboard/panels";
 import { ErrorState, LoadingState } from "@/components/ui/state";
+import { resourceError } from "@/components/procurement/use-resource";
 import { getDashboardSummary } from "@/lib/api/dashboard";
-import { isApiError } from "@/lib/api/errors";
 import { formatTimestamp } from "@/lib/labels";
 import type { DashboardSummary } from "@/types/dashboard";
 
@@ -21,16 +21,6 @@ type LoadState =
   | { kind: "loading" }
   | { kind: "ready"; summary: DashboardSummary; refreshedAt: string }
   | { kind: "error"; message: string; summary: DashboardSummary | null };
-
-function errorMessage(error: unknown): string {
-  if (isApiError(error)) {
-    if (error.status === 0) {
-      return `Backend unavailable. ${error.message} Start the API and confirm NEXT_PUBLIC_API_BASE_URL.`;
-    }
-    return `Dashboard request failed (${error.status}). ${error.message}`;
-  }
-  return "Dashboard request failed before a response was received.";
-}
 
 export function DashboardScreen() {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
@@ -57,7 +47,7 @@ export function DashboardScreen() {
         }
         setState((current) => ({
           kind: "error",
-          message: errorMessage(error),
+          message: resourceError(error, "Dashboard"),
           summary:
             current.kind === "ready"
               ? current.summary
@@ -111,7 +101,7 @@ export function DashboardScreen() {
       {state.kind === "loading" ? (
         <LoadingState
           title="Loading dashboard"
-          description="Requesting GET /dashboard/summary."
+          description="Reading stored procurement counts."
         />
       ) : null}
 
