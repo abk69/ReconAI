@@ -49,6 +49,7 @@ Intelligent procurement reconciliation and exception-resolution platform.
 | M10.8 Visual system | Done |
 | M10.9 Frontend production readiness | Done |
 | M10.10 Document intake UI | Done |
+| M11.1 Extraction evaluation | Done |
 
 The dashboard shell lives in [`frontend/`](frontend/). See [`docs/M10_FRONTEND.md`](docs/M10_FRONTEND.md).
 
