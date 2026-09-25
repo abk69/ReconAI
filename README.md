@@ -52,6 +52,7 @@ Intelligent procurement reconciliation and exception-resolution platform.
 | M11.1 Extraction evaluation | Done |
 | M11.2 RAG and grounding evaluation | Done |
 | M11.3 Agent safety evaluation | Done |
+| M11.4 Security and prompt-injection evaluation | Done |
 
 The dashboard shell lives in [`frontend/`](frontend/). See [`docs/M10_FRONTEND.md`](docs/M10_FRONTEND.md).
 
