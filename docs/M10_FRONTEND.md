@@ -257,9 +257,11 @@ Added reads:
 - `GET /documents/{id}/raw-extraction` returns the stored raw extraction when the disclosure is opened. Keys that look like storage paths or secrets are omitted.
 - `GET /review/tasks?document_id=` limits the queue to one document.
 
-`storage_path` remains on the document API response and is not shown. SHA-256, MIME type, extension, and size are shown as stored file metadata. There is no document preview and no upload control.
+`storage_path` remains on the document API response and is not shown. SHA-256, MIME type, extension, and size are shown as stored file metadata. There is no document preview.
 
 `POST /documents/{id}/understand` and `POST /documents/{id}/llm-understand` are not called by this workspace.
+
+`/documents` can upload one file through the existing `POST /documents` multipart field `file`. The browser checks extension, MIME when the browser provides one, emptiness, and the 10 MB limit before sending. The API remains authoritative. A duplicate SHA-256 returns the existing document id and is not shown as a failure. Upload does not start extraction, grounding, reconciliation, resolution, anomaly scanning, or risk scoring.
 
 ### Lifecycle
 

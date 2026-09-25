@@ -5,6 +5,7 @@ import { recordDiagnostic } from "@/lib/observability/diagnostics";
 type RequestOptions = {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;
+  formData?: FormData;
   signal?: AbortSignal;
   timeoutMs?: number;
 };
@@ -57,8 +58,13 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 
   try {
     const headers: Record<string, string> = {};
-    if (options.body !== undefined) {
+    let body: BodyInit | undefined;
+    if (options.formData) {
+      // Leave Content-Type unset so the browser supplies the multipart boundary.
+      body = options.formData;
+    } else if (options.body !== undefined) {
       headers["Content-Type"] = "application/json";
+      body = JSON.stringify(options.body);
     }
     // Authentication is not implemented. A future session may set Authorization here.
     // Do not read secrets from NEXT_PUBLIC_* variables.
@@ -66,7 +72,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     const response = await fetch(joinUrl(path), {
       method,
       headers: Object.keys(headers).length > 0 ? headers : undefined,
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      body,
       signal: controller.signal,
     });
 

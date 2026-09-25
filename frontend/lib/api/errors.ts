@@ -9,6 +9,7 @@ export type ApiErrorCategory =
   | "not_found"
   | "conflict"
   | "invalid"
+  | "too_large"
   | "rate_limited"
   | "server"
   | "malformed"
@@ -38,6 +39,7 @@ export function categoryForStatus(status: number): ApiErrorCategory {
   if (status === 403) return "forbidden";
   if (status === 404) return "not_found";
   if (status === 409) return "conflict";
+  if (status === 413) return "too_large";
   if (status === 422) return "invalid";
   if (status === 429) return "rate_limited";
   if (status >= 500) return "server";
@@ -69,6 +71,8 @@ export function explainApiError(error: unknown, label: string): string {
       return safe
         ? `${label} was not accepted. ${safe}`
         : `${label} was not accepted. Check the values and try again.`;
+    case "too_large":
+      return `${label} is larger than the service accepts.`;
     case "bad_request":
       return safe
         ? `${label} could not be completed. ${safe}`

@@ -48,6 +48,7 @@ Intelligent procurement reconciliation and exception-resolution platform.
 | M10.7 Policy intelligence | Done |
 | M10.8 Visual system | Done |
 | M10.9 Frontend production readiness | Done |
+| M10.10 Document intake UI | Done |
 
 The dashboard shell lives in [`frontend/`](frontend/). See [`docs/M10_FRONTEND.md`](docs/M10_FRONTEND.md).
 

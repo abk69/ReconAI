@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense } from "react";
+import { Suspense, useRef, useState } from "react";
 
+import { UploadDialog } from "@/components/documents/upload-dialog";
 import { FilterBar, useListQuery } from "@/components/procurement/filters";
 import { RecordState } from "@/components/procurement/record-state";
 import { useResource } from "@/components/procurement/use-resource";
@@ -76,7 +77,10 @@ function ProcessingSignals({ items }: { items: { status: string }[] }) {
 
 function DocumentsBody() {
   const query = useListQuery();
-  const key = `documents:${query.q}:${query.documentType}:${query.status}:${query.extractionOutcome}:${query.reviewStatus}:${query.offset}`;
+  const uploadButtonRef = useRef<HTMLButtonElement>(null);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploadVersion, setUploadVersion] = useState(0);
+  const key = `documents:${uploadVersion}:${query.q}:${query.documentType}:${query.status}:${query.extractionOutcome}:${query.reviewStatus}:${query.offset}`;
   const state = useResource(
     key,
     (signal) =>
@@ -97,15 +101,32 @@ function DocumentsBody() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-8">
-      <div>
-        <p className="text-[11px] font-medium tracking-[0.2em] text-ink-faint uppercase">Document intelligence</p>
-        <h1 className="mt-3 text-4xl font-semibold tracking-tight text-ink">Documents</h1>
-        <p className="mt-3 max-w-2xl text-sm leading-6 text-ink-muted">
-          Persisted intake records. Current document status, extraction outcome, and review status
-          are stored facts. An extraction candidate is not an authoritative procurement record.
-          Upload is not available on this page.
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-[11px] font-medium tracking-[0.2em] text-ink-faint uppercase">Document intelligence</p>
+          <h1 className="mt-3 text-4xl font-semibold tracking-tight text-ink">Documents</h1>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-ink-muted">
+            Persisted intake records. Current document status, extraction outcome, and review status
+            are stored facts. An extraction candidate is not an authoritative procurement record.
+          </p>
+        </div>
+        <button
+          ref={uploadButtonRef}
+          type="button"
+          className="min-h-10 rounded-lg bg-brand px-3 py-2 text-sm text-on-brand"
+          onClick={() => setUploadOpen(true)}
+        >
+          Upload document
+        </button>
       </div>
+      <UploadDialog
+        open={uploadOpen}
+        onClose={() => {
+          setUploadOpen(false);
+          uploadButtonRef.current?.focus();
+        }}
+        onUploaded={() => setUploadVersion((version) => version + 1)}
+      />
       <FilterBar
         fields={[
           { name: "q", label: "Filename" },
