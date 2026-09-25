@@ -54,8 +54,17 @@ Intelligent procurement reconciliation and exception-resolution platform.
 | M11.3 Agent safety evaluation | Done |
 | M11.4 Security and prompt-injection evaluation | Done |
 | M11.5 Performance, cost, and reliability evaluation | Done |
+| M11.6 Unified evaluation report | Done |
 
 The dashboard shell lives in [`frontend/`](frontend/). See [`docs/M10_FRONTEND.md`](docs/M10_FRONTEND.md).
+
+## Evaluation evidence
+
+M11 measures extraction, retrieval and grounding, agent safety, prompt-injection handling, and local performance independently. The consolidated write-up is [`docs/M11_EVALUATION.md`](docs/M11_EVALUATION.md).
+
+```bash
+python -m app.evaluation.m11_report_runner
+```
 
 ## M9.3 — Transparent risk scoring
 

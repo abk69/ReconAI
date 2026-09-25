@@ -44,3 +44,6 @@ Thumbs.db
 
 # Local document storage
 storage/
+
+# Generated evaluation artifacts (M11.6 --write)
+evaluation/reports/
