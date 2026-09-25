@@ -39,8 +39,10 @@ markers = [
     "live_rag_eval: live M7.5 RAG evaluation smoke (requires GEMINI_API_KEY; excluded by default)",
     "live_resolution_planner: live Gemini resolution planning (requires GEMINI_API_KEY; excluded by default)",
     "live_resolution_eval: live M8.7 resolution evaluation smoke (requires GEMINI_API_KEY; excluded by default)",
+    "live_agent_eval: live M11.3 agent safety planner smoke (requires GEMINI_API_KEY; excluded by default)",
+    "live_security_eval: live M11.4 prompt-injection extraction smoke (requires GEMINI_API_KEY; excluded by default)",
 ]
-addopts = "-m 'not live_llm and not live_embedding and not live_grounding and not live_rag_eval and not live_resolution_planner and not live_resolution_eval'"
+addopts = "-m 'not live_llm and not live_embedding and not live_grounding and not live_rag_eval and not live_resolution_planner and not live_resolution_eval and not live_agent_eval and not live_security_eval'"
 
 [tool.ruff]
 target-version = "py311"
