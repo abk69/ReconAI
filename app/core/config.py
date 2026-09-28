@@ -4,6 +4,14 @@ from functools import lru_cache
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine.url import make_url
+from sqlalchemy.exc import ArgumentError
+
+_LOCAL_ENV = "local"
+_NON_LOCAL_ENVS = frozenset({"demo", "production"})
+_ALLOWED_ENVS = frozenset({_LOCAL_ENV, *_NON_LOCAL_ENVS})
+_LOCAL_DB_USER = "reconai"
+_LOCAL_DB_PASSWORD = "reconai"
 
 
 class Settings(BaseSettings):
@@ -225,7 +233,38 @@ class Settings(BaseSettings):
     )
 
 
+class ConfigurationError(RuntimeError):
+    """Raised when the process profile is unsafe for the selected APP_ENV."""
+
+
+def uses_local_default_database(database_url: str) -> bool:
+    """True only for the known local Compose account, not for other passwords."""
+    try:
+        url = make_url(database_url)
+    except (ArgumentError, ValueError):
+        return False
+    return url.username == _LOCAL_DB_USER and url.password == _LOCAL_DB_PASSWORD
+
+
+def enforce_profile(settings: Settings) -> Settings:
+    """Apply single-operator profile rules. Does not print credentials."""
+    env = settings.app_env.strip().lower()
+    if env not in _ALLOWED_ENVS:
+        raise ConfigurationError("APP_ENV must be one of: local, demo, production.")
+    settings.app_env = env
+    if env == _LOCAL_ENV:
+        return settings
+    if settings.debug and "debug" in settings.model_fields_set:
+        raise ConfigurationError("Non-local environment cannot enable debug.")
+    settings.debug = False
+    if uses_local_default_database(settings.database_url):
+        raise ConfigurationError(
+            "Non-local environment cannot use the default local database credentials."
+        )
+    return settings
+
+
 @lru_cache
 def get_settings() -> Settings:
-    """Return a cached Settings instance."""
-    return Settings()
+    """Return a cached Settings instance after profile checks."""
+    return enforce_profile(Settings())

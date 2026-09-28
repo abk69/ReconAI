@@ -448,6 +448,23 @@ GET  /documents/{id}/understanding
 
 Responses never expose filesystem storage paths.
 
+## Single-operator profile
+
+ReconAI v1.0 is a single-operator portfolio and demo system. Authentication is intentionally not implemented. Passing CI does not make the system production ready for shared organizational data. This profile is production-profile hardened for the single-operator portfolio/demo deployment.
+
+`APP_ENV=local` allows debug and the Compose database account (`reconai` / the local default password). `APP_ENV=demo` and `APP_ENV=production` force debug off when it was not explicitly enabled, refuse an explicit debug flag, and refuse that known local database account. Other passwords are accepted. `GEMINI_API_KEY` stays optional. Deterministic reconciliation, review, and evaluation run without it.
+
+`GET /health` is liveness only. It does not touch the database. `GET /ready` runs `SELECT 1` through the application database session. Success is `{"status": "ready"}`. Failure is HTTP 503 `{"status": "not_ready"}` with no connection string or exception text.
+
+```bash
+# Local
+APP_ENV=local uvicorn app.main:app --reload
+
+# Demo or production configuration check (no server required)
+# Use a non-default database URL. Do not set DEBUG=true.
+APP_ENV=demo DEBUG=false DATABASE_URL=postgresql+psycopg://app:choose-one@localhost:5432/reconai python -c "from app.core.config import get_settings; get_settings()"
+```
+
 ## Local setup
 
 ```bash
@@ -461,7 +478,13 @@ uvicorn app.main:app --reload
 ## Tests / lint
 
 ```bash
+ruff check app tests
 pytest -q
-ruff check .
-ruff format --check .
+cd frontend && npm run lint && npm run typecheck && npm run build
+```
+
+The default suite does not need a running Postgres. The optional Postgres check, after `alembic upgrade head` against PostgreSQL, is:
+
+```bash
+pytest -q -o addopts= -m postgres
 ```
