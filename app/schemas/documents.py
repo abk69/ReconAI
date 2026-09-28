@@ -21,7 +21,6 @@ class DocumentResponse(BaseModel):
     file_extension: str
     file_size: int
     sha256: str
-    storage_path: str
     status: DocumentStatus
     vendor_id: UUID | None = None
     purchase_order_id: UUID | None = None

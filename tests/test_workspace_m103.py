@@ -159,6 +159,6 @@ def test_workspace_lists_filter_and_detail(db_session: Session) -> None:
         assert docs.status_code == 200
         assert docs.json()["total"] == 1
         assert docs.json()["items"][0]["status"] == "VALIDATED"
-        assert "hidden/path" in docs.text
+        assert "hidden/path" not in docs.text
     finally:
         app.dependency_overrides.clear()

@@ -483,6 +483,8 @@ In another shell: `cd frontend && npm install && npm run dev`, then open `http:/
 
 `GET /health` is liveness. `GET /ready` checks the database. Gemini is optional and stays in the backend `.env`.
 
+Public document responses omit `storage_path`. Responses carry `X-Request-ID` for correlation only. Unexpected errors return a short message plus that id. Details are in [`docs/M12_PRODUCTION_HARDENING.md`](docs/M12_PRODUCTION_HARDENING.md).
+
 Day-to-day development with debug enabled uses `.env.example` and `APP_ENV=local` instead of the demo file.
 
 ## Tests / lint

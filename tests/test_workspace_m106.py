@@ -73,7 +73,7 @@ def test_document_list_facts_filters_and_raw_extraction(db_session: Session) -> 
         assert by_name["reviewed.pdf"]["extraction_outcome"] == "REVIEW_REQUIRED"
         assert by_name["reviewed.pdf"]["detected_type"] == "INVOICE"
         assert by_name["reviewed.pdf"]["review_status"] == "PENDING"
-        assert "storage/secret-path" in listed.text
+        assert "storage/secret-path" not in listed.text
 
         filtered = client.get("/documents", params={"extraction_outcome": "REVIEW_REQUIRED"})
         assert filtered.status_code == 200

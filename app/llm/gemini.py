@@ -10,6 +10,8 @@ from typing import Any, TypeVar
 from pydantic import BaseModel
 
 from app.core.config import Settings, get_settings
+from app.core.observability import log_provider_failure
+from app.core.request_context import current_request_id
 from app.llm.base import (
     LLMProvider,
     LLMProviderError,
@@ -106,9 +108,11 @@ class GeminiProvider(LLMProvider):
                 )
             except LLMProviderError as exc:
                 if exc.code in {"MISSING_API_KEY", "SCHEMA_INVALID", "MALFORMED_RESPONSE"}:
+                    log_provider_failure(exc.code)
                     raise
                 last_error = exc
                 if attempt >= max_retries:
+                    log_provider_failure(exc.code)
                     raise
                 time.sleep(min(0.5 * (attempt + 1), 2.0))
             except Exception as exc:  # noqa: BLE001
@@ -118,8 +122,10 @@ class GeminiProvider(LLMProvider):
                 if retryable and attempt < max_retries:
                     time.sleep(min(0.5 * (attempt + 1), 2.0))
                     continue
+                log_provider_failure(mapped.code)
                 raise mapped from exc
 
+        log_provider_failure("PROVIDER_ERROR")
         raise LLMProviderError(
             f"Gemini call failed after retries: {last_error}",
             code="PROVIDER_ERROR",
@@ -185,11 +191,13 @@ class GeminiProvider(LLMProvider):
 
         usage = _extract_usage(response)
         logger.info(
-            "Gemini structured complete model=%s schema=%s input_tokens=%s output_tokens=%s",
+            "Gemini structured complete model=%s schema=%s input_tokens=%s "
+            "output_tokens=%s request_id=%s",
             self.model,
             response_model.__name__,
             usage.input_tokens,
             usage.output_tokens,
+            current_request_id() or "-",
         )
         return StructuredLLMResponse(
             output=output,

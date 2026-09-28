@@ -6,6 +6,7 @@ import logging
 from typing import Any
 
 from app.core.config import Settings, get_settings
+from app.core.observability import log_provider_failure
 from app.embeddings.base import (
     EmbeddingProvider,
     EmbeddingProviderError,
@@ -71,7 +72,9 @@ class GeminiEmbeddingProvider(EmbeddingProvider):
                 config=config,
             )
         except Exception as exc:  # noqa: BLE001
-            raise _map_embedding_exception(exc) from exc
+            mapped = _map_embedding_exception(exc)
+            log_provider_failure(mapped.code)
+            raise mapped from exc
 
         embeddings = getattr(response, "embeddings", None) or []
         if len(embeddings) != len(texts):
@@ -110,7 +113,9 @@ class GeminiEmbeddingProvider(EmbeddingProvider):
                 config=config,
             )
         except Exception as exc:  # noqa: BLE001
-            raise _map_embedding_exception(exc) from exc
+            mapped = _map_embedding_exception(exc)
+            log_provider_failure(mapped.code)
+            raise mapped from exc
 
         embeddings = getattr(response, "embeddings", None) or []
         if not embeddings:

@@ -1,8 +1,17 @@
 """FastAPI application entrypoint."""
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exception_handlers import (
+    http_exception_handler,
+    request_validation_exception_handler,
+)
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.responses import Response
 
+from app.api.middleware import RequestContextMiddleware
 from app.api.routes import (
     anomalies,
     dashboard,
@@ -19,6 +28,8 @@ from app.api.routes import (
     vendors,
 )
 from app.core.config import get_settings
+from app.core.observability import log_application_error
+from app.core.request_context import REQUEST_ID_HEADER, current_request_id
 
 
 def create_app() -> FastAPI:
@@ -41,7 +52,24 @@ def create_app() -> FastAPI:
             allow_origins=origins,
             allow_credentials=False,
             allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-            allow_headers=["Authorization", "Content-Type"],
+            allow_headers=["Authorization", "Content-Type", REQUEST_ID_HEADER],
+            expose_headers=[REQUEST_ID_HEADER],
+        )
+    application.add_middleware(RequestContextMiddleware)
+
+    @application.exception_handler(Exception)
+    async def unhandled_exception(request: Request, exc: Exception) -> Response:
+        if isinstance(exc, StarletteHTTPException):
+            return await http_exception_handler(request, exc)
+        if isinstance(exc, RequestValidationError):
+            return await request_validation_exception_handler(request, exc)
+        log_application_error()
+        return JSONResponse(
+            status_code=500,
+            content={
+                "detail": "Internal server error",
+                "request_id": current_request_id() or "-",
+            },
         )
     application.include_router(health.router, prefix=prefix)
     application.include_router(dashboard.router, prefix=prefix)

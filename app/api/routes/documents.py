@@ -53,7 +53,6 @@ def _to_response(row: object, *, is_duplicate: bool = False) -> DocumentResponse
         file_extension=row.file_extension,  # type: ignore[attr-defined]
         file_size=row.file_size,  # type: ignore[attr-defined]
         sha256=row.sha256,  # type: ignore[attr-defined]
-        storage_path=row.storage_path,  # type: ignore[attr-defined]
         status=DocumentStatus(row.status),  # type: ignore[attr-defined]
         vendor_id=row.vendor_id,  # type: ignore[attr-defined]
         purchase_order_id=row.purchase_order_id,  # type: ignore[attr-defined]
@@ -141,11 +140,11 @@ async def upload_document(
         ) from exc
     except DocumentAssociationError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    except DocumentServiceError as exc:
+    except DocumentServiceError:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(exc),
-        ) from exc
+            detail="Document could not be stored.",
+        ) from None
 
     payload = _to_response(row, is_duplicate=is_duplicate)
     code = status.HTTP_200_OK if is_duplicate else status.HTTP_201_CREATED
