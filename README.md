@@ -465,15 +465,25 @@ APP_ENV=local uvicorn app.main:app --reload
 APP_ENV=demo DEBUG=false DATABASE_URL=postgresql+psycopg://app:choose-one@localhost:5432/reconai python -c "from app.core.config import get_settings; get_settings()"
 ```
 
-## Local setup
+## Run ReconAI locally
+
+Single-operator demo. The database runs in Docker. The API and the Next.js app run on the host. Migrations are an explicit step. Details, PowerShell commands, and the empty-database walkthrough are in [`docs/M12_DEMO_RUNTIME.md`](docs/M12_DEMO_RUNTIME.md).
+
+Demo profile (`APP_ENV=demo`, password is not the local default):
 
 ```bash
-pip install -r requirements.txt
-cp .env.example .env
+cp .env.demo.example .env
+cp frontend/.env.example frontend/.env.local
 docker compose up -d
 alembic upgrade head
-uvicorn app.main:app --reload
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
+
+In another shell: `cd frontend && npm install && npm run dev`, then open `http://localhost:3000`.
+
+`GET /health` is liveness. `GET /ready` checks the database. Gemini is optional and stays in the backend `.env`.
+
+Day-to-day development with debug enabled uses `.env.example` and `APP_ENV=local` instead of the demo file.
 
 ## Tests / lint
 

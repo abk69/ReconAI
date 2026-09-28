@@ -4,16 +4,18 @@ services:
     # Same credentials / volume / port as before so existing DATABASE_URL keeps working.
     image: pgvector/pgvector:pg16
     container_name: reconai-postgres
+    # Local defaults match .env.example. APP_ENV=demo must override POSTGRES_PASSWORD
+    # in .env before the data volume is created. See .env.demo.example.
     environment:
-      POSTGRES_USER: reconai
-      POSTGRES_PASSWORD: reconai
-      POSTGRES_DB: reconai
+      POSTGRES_USER: ${POSTGRES_USER:-reconai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-reconai}
+      POSTGRES_DB: ${POSTGRES_DB:-reconai}
     ports:
       - "5432:5432"
     volumes:
       - reconai_pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U reconai -d reconai"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-reconai} -d ${POSTGRES_DB:-reconai}"]
       interval: 5s
       timeout: 5s
       retries: 10
