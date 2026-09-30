@@ -42,8 +42,9 @@ Thumbs.db
 *.db
 *.sqlite3
 
-# Local document storage
-storage/
+# Local document storage at the repository root.
+# A bare "storage/" pattern would also ignore the app/storage package.
+/storage/
 
 # Generated evaluation artifacts (M11.6 --write)
 evaluation/reports/
