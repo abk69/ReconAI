@@ -15,7 +15,7 @@ from app.db.models import (
     PurchaseOrder,
     ReconciliationException,
 )
-from app.domain.enums import ExceptionStatus
+from app.domain.enums import ExceptionStatus, InvoiceStatus, ReconciliationStatus
 from app.reconciliation.engine import reconcile
 from app.reconciliation.rules import normalize_invoice_number
 from app.reconciliation.schemas import (
@@ -152,6 +152,23 @@ def _find_duplicate_candidates(
     return candidates
 
 
+def _record_invoice_outcome(invoice: Invoice, status: ReconciliationStatus) -> None:
+    """Remember a finished run on the invoice so the workspace can hide the action."""
+    tracked = {
+        InvoiceStatus.RECEIVED.value,
+        InvoiceStatus.MATCHED.value,
+        InvoiceStatus.EXCEPTION.value,
+    }
+    if invoice.status not in tracked:
+        return
+    if status is ReconciliationStatus.MATCHED:
+        invoice.status = InvoiceStatus.MATCHED.value
+    elif status is ReconciliationStatus.EXCEPTIONS_FOUND:
+        invoice.status = InvoiceStatus.EXCEPTION.value
+    else:
+        invoice.status = InvoiceStatus.RECEIVED.value
+
+
 def _upsert_exceptions(
     session: Session,
     drafts: list[ExceptionDraft],
@@ -283,6 +300,8 @@ class ReconciliationService:
         result = reconcile(payload)
 
         if persist:
+            if invoice is not None:
+                _record_invoice_outcome(invoice, result.status)
             _upsert_exceptions(self._session, result.exceptions)
             self._session.commit()
 

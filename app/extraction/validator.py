@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from app.domain.enums import DocumentType
 from app.extraction.schemas import (
     GoodsReceiptCandidate,
@@ -10,6 +12,33 @@ from app.extraction.schemas import (
     ValidationIssue,
     ValidationResult,
 )
+
+CandidateModel = PurchaseOrderCandidate | GoodsReceiptCandidate | InvoiceCandidate
+
+
+def coerce_candidate(
+    document_type: DocumentType,
+    payload: dict[str, Any] | None,
+) -> CandidateModel | None:
+    """Parse a stored candidate dict into the document-type model.
+
+    Returns None when the type has no candidate model. Invalid payloads raise
+    pydantic.ValidationError so callers can refuse promotion.
+    """
+    if not isinstance(payload, dict):
+        return None
+    if document_type is DocumentType.PO:
+        return PurchaseOrderCandidate.model_validate(payload)
+    if document_type is DocumentType.GRN:
+        return GoodsReceiptCandidate.model_validate(payload)
+    if document_type is DocumentType.INVOICE:
+        return InvoiceCandidate.model_validate(payload)
+    return None
+
+
+def has_hard_validation_errors(result: ValidationResult) -> bool:
+    """True when validation recorded an error that blocks promotion."""
+    return any(issue.severity == "error" for issue in result.issues)
 
 
 def validate_candidate(

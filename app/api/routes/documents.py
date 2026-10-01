@@ -191,6 +191,14 @@ def list_documents(
                 detected_type=_known(DocumentType, fact["detected_type"]),
                 extraction_outcome=_known(ExtractionOutcome, fact["extraction_outcome"]),
                 review_status=_known(ReviewStatus, fact["review_status"]),
+                po_number=fact["po_number"],
+                purchase_order_ready=fact["purchase_order_ready"] == "true",
+                goods_receipt_ready=fact["goods_receipt_ready"] == "true",
+                invoice_ready=fact["invoice_ready"] == "true",
+                invoice_number=fact["invoice_number"],
+                reconciliation_status=fact["reconciliation_status"],
+                related_invoice_summary=fact["related_invoice_summary"],
+                ambiguity_summary=fact["ambiguity_summary"],
             )
         )
     return DocumentListResponse(items=items, count=len(items), total=total)

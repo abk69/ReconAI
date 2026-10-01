@@ -74,6 +74,35 @@ export function getVendor(id: string, signal?: AbortSignal): Promise<Vendor> {
   return apiRequest(`/vendors/${id}`, { signal });
 }
 
+export type ReconciliationRun = {
+  status: string;
+  exception_count: number;
+  exceptions: {
+    exception_type: string;
+    severity: string;
+    message: string;
+    evidence: Record<string, unknown>;
+  }[];
+  summary: {
+    po_line_count: number;
+    grn_count: number;
+    invoice_line_count: number;
+    total_ordered_quantity: string;
+    total_received_quantity: string;
+    total_invoiced_quantity: string;
+  };
+  purchase_order_id: string | null;
+  invoice_id: string | null;
+  goods_receipt_ids: string[];
+};
+
+export function runReconciliation(body: {
+  purchase_order_id?: string;
+  invoice_id?: string;
+}): Promise<ReconciliationRun> {
+  return apiRequest("/reconciliation/run", { method: "POST", body: { ...body, persist: true } });
+}
+
 export function listExceptions(
   params: ListParams & {
     severity?: string;

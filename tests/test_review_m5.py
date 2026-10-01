@@ -554,6 +554,51 @@ def test_clean_m4_does_not_create_review_task(services) -> None:
     assert tasks == []
 
 
+def test_request_review_opens_a_pending_task_without_approving(
+    services, db_session: Session
+) -> None:
+    docs, understanding, reviews, _promo = services
+    text = (
+        "TAX INVOICE\n"
+        "Invoice Number: INV-CLEAN-9\n"
+        "Vendor: Acme Supplies\n"
+        "Invoice Date: 2026-09-15\n"
+        "PO Number: PO-CLEAN-9\n"
+        "Widget A 10 500.00\n"
+    )
+    row, _ = docs.upload(
+        filename="clean-review.pdf",
+        content_type="application/pdf",
+        data=_make_pdf(text),
+        document_type=DocumentType.INVOICE,
+    )
+    result = understanding.understand(row.id)
+    assert result.outcome is ExtractionOutcome.READY_FOR_RECONCILIATION
+    assert [task for task in reviews.list_tasks() if task.document_id == row.id] == []
+
+    def _override():
+        yield db_session
+
+    app.dependency_overrides[get_db] = _override
+    try:
+        missing = client.post("/review/tasks", json={"document_id": str(uuid4())})
+        assert missing.status_code == 404
+
+        created = client.post("/review/tasks", json={"document_id": str(row.id)})
+        assert created.status_code == 200
+        body = created.json()
+        assert body["status"] == "PENDING"
+        assert body["document_id"] == str(row.id)
+        assert body["promoted_entity_id"] is None
+
+        again = client.post("/review/tasks", json={"document_id": str(row.id)})
+        assert again.status_code == 200
+        assert again.json()["id"] == body["id"]
+        assert again.json()["status"] == "PENDING"
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_approved_review_moves_toward_reconciliation(services, db_session: Session) -> None:
     docs, understanding, reviews, promo = services
     text = (

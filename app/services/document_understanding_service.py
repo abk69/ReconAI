@@ -12,7 +12,7 @@ from app.db.models import Document, DocumentExtractionResult
 from app.domain.enums import DocumentStatus, DocumentType, ExtractionOutcome
 from app.extraction.base import EXTRACTOR_VERSION, select_extractor
 from app.extraction.classifier import classify_document
-from app.extraction.schemas import ExtractionResultPayload, ValidationResult
+from app.extraction.schemas import ExtractionResultPayload, ValidationIssue, ValidationResult
 from app.extraction.structure import build_candidate
 from app.extraction.validator import validate_candidate
 from app.services.review_service import ReviewService
@@ -26,6 +26,31 @@ class DocumentUnderstandingError(Exception):
 
 class DocumentUnderstandingNotFoundError(DocumentUnderstandingError):
     """Document or extraction result missing."""
+
+
+_FIELD_LABELS = {
+    "invoice_number": "Invoice number",
+    "invoice_date": "Invoice date",
+    "po_number": "PO number",
+    "order_date": "Order date",
+    "receipt_date": "Receipt date",
+    "grn_number": "Goods receipt",
+    "vendor_name": "Vendor",
+}
+
+
+def _ambiguous_fields(metadata: dict) -> list[dict]:
+    raw = metadata.get("ambiguous_fields") if isinstance(metadata, dict) else None
+    if not isinstance(raw, list):
+        return []
+    return [item for item in raw if isinstance(item, dict) and item.get("values")]
+
+
+def _ambiguity_message(item: dict) -> str:
+    name = str(item.get("field_name") or "field")
+    label = _FIELD_LABELS.get(name, name.replace("_", " ").capitalize())
+    values = [str(value) for value in item.get("values") or []]
+    return f"{label}: {' / '.join(values)}"
 
 
 class DocumentUnderstandingService:
@@ -124,8 +149,29 @@ class DocumentUnderstandingService:
             candidate=candidate,
             extraction_warnings=extracted.warnings,
         )
+        ambiguous = _ambiguous_fields(extracted.metadata)
+        if ambiguous:
+            validation = ValidationResult(
+                is_valid=False,
+                requires_review=True,
+                issues=[
+                    *validation.issues,
+                    *[
+                        ValidationIssue(
+                            code="AMBIGUOUS_FIELD",
+                            message=_ambiguity_message(item),
+                            field_name=str(item.get("field_name") or "") or None,
+                            severity="review",
+                        )
+                        for item in ambiguous
+                    ],
+                ],
+            )
 
-        if validation.is_valid:
+        if ambiguous:
+            outcome = ExtractionOutcome.REVIEW_REQUIRED
+            message = "Ambiguous fields require review."
+        elif validation.is_valid:
             outcome = ExtractionOutcome.READY_FOR_RECONCILIATION
             message = "Document understood and validated."
         elif validation.requires_review:

@@ -6,7 +6,7 @@ import { useState } from "react";
 export function FilterBar({
   fields,
 }: {
-  fields: { name: string; label: string; options?: string[] }[];
+  fields: { name: string; label: string; options?: Array<string | { value: string; label: string }> }[];
 }) {
   const params = useSearchParams();
   const router = useRouter();
@@ -46,11 +46,15 @@ export function FilterBar({
               }
             >
               <option value="">Any</option>
-              {field.options.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
+              {field.options.map((option) => {
+                const value = typeof option === "string" ? option : option.value;
+                const label = typeof option === "string" ? option : option.label;
+                return (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                );
+              })}
             </select>
           ) : (
             <input

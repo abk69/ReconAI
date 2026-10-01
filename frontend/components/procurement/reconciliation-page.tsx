@@ -27,6 +27,24 @@ const TYPES = [
   "OTHER",
 ];
 
+const STATUS_LABELS: Record<string, string> = {
+  OPEN: "Open",
+  IN_REVIEW: "In review",
+  RESOLVED: "Resolved",
+  DISMISSED: "Dismissed",
+};
+
+const EXCEPTION_LABELS: Record<string, string> = {
+  QUANTITY_MISMATCH: "Quantity does not match",
+  PRICE_MISMATCH: "Price does not match",
+  TAX_MISMATCH: "Tax does not match",
+  IDENTIFIER_MISMATCH: "Identifier does not match",
+  DUPLICATE_INVOICE: "Duplicate invoice",
+  DATE_MISMATCH: "Date does not match",
+  MISSING_DOCUMENT: "A document is missing",
+  OTHER: "Other problem",
+};
+
 function ReconciliationBody({
   detailBase,
   title,
@@ -82,9 +100,24 @@ function ReconciliationBody({
         key={params.toString()}
         fields={[
           { name: "q", label: "Invoice, PO, or GRN number" },
-          { name: "status", label: "Status", options: STATUSES },
-          { name: "severity", label: "Severity", options: SEVERITIES },
-          { name: "exception_type", label: "Exception type", options: TYPES },
+          {
+            name: "status",
+            label: "Status",
+            options: STATUSES.map((status) => ({ value: status, label: STATUS_LABELS[status] ?? status })),
+          },
+          {
+            name: "severity",
+            label: "Severity",
+            options: SEVERITIES.map((severity) => ({
+              value: severity,
+              label: severity.charAt(0) + severity.slice(1).toLowerCase(),
+            })),
+          },
+          {
+            name: "exception_type",
+            label: "Problem",
+            options: TYPES.map((type) => ({ value: type, label: EXCEPTION_LABELS[type] ?? type })),
+          },
         ]}
       />
       {state.kind === "ready" ? (
@@ -97,7 +130,7 @@ function ReconciliationBody({
               aria-pressed={query.status === status}
               onClick={() => setStatus(status)}
             >
-              <span className="block text-xs text-ink-muted">{status}</span>
+              <span className="block text-xs text-ink-muted">{STATUS_LABELS[status] ?? status}</span>
               <span className="text-lg font-semibold tabular-nums text-ink">
                 {state.data.counts_by_status[status] ?? 0}
               </span>
@@ -129,7 +162,7 @@ function ReconciliationBody({
                   header: "Type",
                   cell: (row) => (
                     <Link className="text-brand underline" href={`${detailBase}/${row.id}`}>
-                      {row.exception_type}
+                      {EXCEPTION_LABELS[row.exception_type] ?? row.exception_type}
                     </Link>
                   ),
                 },
@@ -190,9 +223,9 @@ function ReconciliationBody({
 export function ReconciliationPage({
   detailBase = "/reconciliation",
   title = "Reconciliation",
-  description = "Persisted results from the deterministic reconciliation engine. This page does not decide whether records match and does not load policy or AI explanations.",
-  emptyTitle = "No reconciliation exceptions recorded",
-  emptyDescription = "No persisted exceptions match this filter. A match that was never stored is not shown as a success count.",
+  description = "Open an invoice and match it after its purchase order and goods receipt are saved. A match is not listed here. This list shows problems that were found.",
+  emptyTitle = "No problems recorded",
+  emptyDescription = "Nothing on this list yet. A clean match is not listed here.",
   loadingTitle = "Loading reconciliation",
 }: {
   detailBase?: string;

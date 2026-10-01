@@ -26,9 +26,9 @@ def test_unified_report_is_deterministic_and_offline(report: dict) -> None:
 
 def test_extraction_and_rag_keep_source_denominators(report: dict) -> None:
     header = report["extraction"]["header_accuracy"]
-    assert header == {"numerator": 58, "denominator": 58, "rate": "1.0000"}
+    assert header == {"numerator": 69, "denominator": 69, "rate": "1.0000"}
     completeness = report["extraction"]["header_completeness"]
-    assert completeness["numerator"] == 58
+    assert completeness["numerator"] == 69
     assert completeness["denominator"] == 75
     assert report["extraction"]["m6_status"] == "NOT_RUN"
     assert report["extraction"]["line_completeness"]["denominator"] == 47

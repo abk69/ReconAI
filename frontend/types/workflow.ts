@@ -60,6 +60,7 @@ export type ReviewTask = {
   reviewed_candidate: Record<string, unknown> | null;
   original_candidate: Record<string, unknown> | null;
   evidence: unknown[];
+  validation_issues?: { code?: string; message?: string; field_name?: string | null; severity?: string }[];
   decisions: ReviewDecision[];
   promoted_entity_type: string | null;
   promoted_entity_id: string | null;

@@ -22,6 +22,13 @@ export function listPolicyGrounding(
   return apiRequest(`/reconciliation/exceptions/${exceptionId}/policy-grounding`, { signal });
 }
 
+export function requestReview(documentId: string): Promise<ReviewTask> {
+  return apiRequest("/review/tasks", {
+    method: "POST",
+    body: { document_id: documentId },
+  });
+}
+
 export function listReviewTasks(
   params: {
     q?: string;

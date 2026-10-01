@@ -108,9 +108,9 @@ export function UploadDialog({
     (outcome.kind === "error"
       ? outcome.message
       : outcome.kind === "uploaded"
-        ? "Document uploaded successfully."
+        ? "Document uploaded. Open it to run understanding."
         : outcome.kind === "duplicate"
-          ? "This document already exists."
+          ? "Document already exists."
           : outcome.kind === "uploading"
             ? "Uploading."
             : null);
@@ -130,7 +130,7 @@ export function UploadDialog({
         Upload document
       </h2>
       <p id={`${titleId}-description`} className="mt-2 text-sm leading-6 text-ink-muted">
-        Upload a procurement document for reconciliation.
+        Upload stores the file for intake. Understanding runs from the document page and does not start here.
       </p>
       <p className="mt-1 text-sm text-ink-muted">PDF, JPG, JPEG, PNG, XLSX · Max 10 MB</p>
 
@@ -209,7 +209,7 @@ export function UploadDialog({
 
       {outcome.kind === "uploaded" || outcome.kind === "duplicate" ? (
         <Link className="mt-3 inline-flex min-h-10 items-center text-sm text-brand underline" href={`/documents/${outcome.id}`}>
-          {outcome.kind === "duplicate" ? "View existing document" : "View document"}
+          {outcome.kind === "duplicate" ? "Open existing document" : "Open document"}
         </Link>
       ) : null}
 

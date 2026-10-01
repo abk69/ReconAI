@@ -9,6 +9,21 @@ from decimal import Decimal, InvalidOperation
 _MONEY_CLEAN = re.compile(r"[,\s₹$€£]")
 _PERCENT_CLEAN = re.compile(r"\s*%\s*$")
 _MULTI_SPACE = re.compile(r"\s+")
+_MISSING_VALUES = frozenset(
+    {
+        "not provided",
+        "not available",
+        "n/a",
+        "na",
+        "none",
+        "null",
+        "unknown",
+        "not specified",
+        "not applicable",
+        "-",
+        "--",
+    }
+)
 
 
 def normalize_identifier(value: str | None) -> str | None:
@@ -18,8 +33,23 @@ def normalize_identifier(value: str | None) -> str | None:
     return cleaned or None
 
 
-def normalize_vendor_name(value: str | None) -> str | None:
+def is_missing_value(value: str | None) -> bool:
+    """True when text states that a field was withheld, not when it names a record."""
+    cleaned = normalize_identifier(value)
+    if cleaned is None:
+        return True
+    return cleaned.casefold() in _MISSING_VALUES
+
+
+def normalize_business_value(value: str | None) -> str | None:
+    """Return a stored identifier, or None when the text says the field is absent."""
+    if is_missing_value(value):
+        return None
     return normalize_identifier(value)
+
+
+def normalize_vendor_name(value: str | None) -> str | None:
+    return normalize_business_value(value)
 
 
 def normalize_money(value: str | Decimal | None) -> Decimal | None:

@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.db.models import Document, GoodsReceipt, Invoice, PurchaseOrder, Vendor
-from app.domain.enums import DocumentStatus, DocumentType
+from app.domain.enums import DocumentStatus, DocumentType, InvoiceStatus
 from app.services.workspace_query import like_pattern
 from app.storage.base import StorageBackend, StorageError
 from app.storage.local import LocalFileStorage
@@ -29,6 +29,38 @@ ALLOWED_EXTENSIONS: dict[str, set[str]] = {
 }
 
 _UNSAFE_FILENAME = re.compile(r"[\\/]|(\.\.)")
+
+
+def summarize_related_invoices(invoices: list[Invoice]) -> str | None:
+    """Order-independent summary of invoices that share one purchase order."""
+    if not invoices:
+        return None
+    ordered = sorted(invoices, key=lambda invoice: invoice.invoice_number)
+    matched = sum(1 for invoice in ordered if invoice.status == InvoiceStatus.MATCHED.value)
+    problems = sum(1 for invoice in ordered if invoice.status == InvoiceStatus.EXCEPTION.value)
+    pending = len(ordered) - matched - problems
+    parts: list[str] = []
+    if matched:
+        parts.append("1 matched" if matched == 1 else f"{matched} matched")
+    if problems:
+        parts.append("1 with a problem" if problems == 1 else f"{problems} with problems")
+    if pending:
+        parts.append("1 not matched yet" if pending == 1 else f"{pending} not matched yet")
+    noun = "invoice" if len(ordered) == 1 else "invoices"
+    return f"{len(ordered)} related {noun} — {', '.join(parts)}"
+
+
+def _ambiguity_summary(validation: object) -> str | None:
+    if not isinstance(validation, dict):
+        return None
+    messages = [
+        str(issue.get("message"))
+        for issue in validation.get("issues") or []
+        if isinstance(issue, dict)
+        and issue.get("code") == "AMBIGUOUS_FIELD"
+        and issue.get("message")
+    ]
+    return " ".join(messages) or None
 
 
 class DocumentServiceError(Exception):
@@ -270,14 +302,22 @@ class DocumentService:
         return list(self._session.scalars(stmt).all()), total
 
     def workspace_facts(self, document_ids: list[UUID]) -> dict[UUID, dict[str, str | None]]:
-        """Latest stored extraction outcome and review status for a page of documents."""
-        from app.db.models import DocumentExtractionResult, ReviewTask
+        """Latest stored extraction outcome, review status, and purchase-order readiness."""
+        from app.db.models import DocumentExtractionResult, GoodsReceipt, PurchaseOrder, ReviewTask
 
         facts: dict[UUID, dict[str, str | None]] = {
             document_id: {
                 "detected_type": None,
                 "extraction_outcome": None,
                 "review_status": None,
+                "po_number": None,
+                "purchase_order_ready": "false",
+                "goods_receipt_ready": "false",
+                "invoice_ready": "false",
+                "invoice_number": None,
+                "reconciliation_status": None,
+                "related_invoice_summary": None,
+                "ambiguity_summary": None,
             }
             for document_id in document_ids
         }
@@ -291,6 +331,11 @@ class DocumentService:
         for row in extractions:
             facts[row.document_id]["detected_type"] = row.detected_type
             facts[row.document_id]["extraction_outcome"] = row.outcome
+            candidate = row.candidate if isinstance(row.candidate, dict) else {}
+            po_number = candidate.get("po_number")
+            if isinstance(po_number, str) and po_number.strip():
+                facts[row.document_id]["po_number"] = po_number.strip()
+            facts[row.document_id]["ambiguity_summary"] = _ambiguity_summary(row.validation)
         reviews = self._session.scalars(
             select(ReviewTask)
             .where(ReviewTask.document_id.in_(document_ids))
@@ -298,6 +343,85 @@ class DocumentService:
         ).all()
         for task in reviews:
             facts[task.document_id]["review_status"] = task.status
+        numbers = {
+            value
+            for fact in facts.values()
+            if isinstance((value := fact.get("po_number")), str) and value
+        }
+        order_ids: dict[str, UUID] = {}
+        if numbers:
+            orders = self._session.scalars(
+                select(PurchaseOrder).where(PurchaseOrder.po_number.in_(numbers))
+            ).all()
+            order_ids = {order.po_number: order.id for order in orders}
+        stored_rows = list(
+            self._session.scalars(select(Document).where(Document.id.in_(document_ids))).all()
+        )
+        po_ids = set(order_ids.values())
+        for row in stored_rows:
+            if row.purchase_order_id is not None:
+                po_ids.add(row.purchase_order_id)
+                facts[row.id]["purchase_order_ready"] = "true"
+            if row.goods_receipt_id is not None:
+                facts[row.id]["goods_receipt_ready"] = "true"
+        receipt_ids: set[object] = set()
+        invoices_by_po: dict[UUID, list[Invoice]] = {}
+        if po_ids:
+            receipt_ids = set(
+                self._session.scalars(
+                    select(GoodsReceipt.purchase_order_id).where(
+                        GoodsReceipt.purchase_order_id.in_(po_ids)
+                    )
+                ).all()
+            )
+            for invoice in self._session.scalars(
+                select(Invoice).where(Invoice.purchase_order_id.in_(po_ids))
+            ).all():
+                if invoice.purchase_order_id is None:
+                    continue
+                invoices_by_po.setdefault(invoice.purchase_order_id, []).append(invoice)
+        direct_ids = [row.invoice_id for row in stored_rows if row.invoice_id is not None]
+        direct: dict[UUID, Invoice] = {}
+        if direct_ids:
+            linked_invoices = self._session.scalars(
+                select(Invoice).where(Invoice.id.in_(direct_ids))
+            ).all()
+            for invoice in linked_invoices:
+                direct[invoice.id] = invoice
+
+        def apply_own_invoice(fact: dict[str, str | None], invoice: Invoice) -> None:
+            fact["invoice_ready"] = "true"
+            fact["invoice_number"] = invoice.invoice_number
+            if invoice.status in {InvoiceStatus.MATCHED.value, InvoiceStatus.EXCEPTION.value}:
+                fact["reconciliation_status"] = invoice.status
+            else:
+                fact["reconciliation_status"] = None
+
+        for fact in facts.values():
+            order_id = order_ids.get(fact.get("po_number") or "")
+            if order_id is None:
+                continue
+            fact["purchase_order_ready"] = "true"
+            if order_id in receipt_ids:
+                fact["goods_receipt_ready"] = "true"
+        for row in stored_rows:
+            fact = facts[row.id]
+            if row.purchase_order_id is not None and row.purchase_order_id in receipt_ids:
+                fact["goods_receipt_ready"] = "true"
+            if row.invoice_id is not None and row.invoice_id in direct:
+                apply_own_invoice(fact, direct[row.invoice_id])
+                continue
+            kind = fact.get("detected_type") or row.document_type
+            if kind not in {DocumentType.PO.value, DocumentType.GRN.value}:
+                continue
+            order_id = row.purchase_order_id or order_ids.get(fact.get("po_number") or "")
+            related = invoices_by_po.get(order_id, []) if order_id is not None else []
+            summary = summarize_related_invoices(related)
+            if summary is None:
+                continue
+            fact["related_invoice_summary"] = summary
+            fact["invoice_ready"] = "true"
+            fact["reconciliation_status"] = None
         return facts
 
     def list(

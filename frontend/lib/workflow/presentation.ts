@@ -100,10 +100,14 @@ export function correctionFields(candidate: Record<string, unknown> | null): Cor
   }
   const fields: CorrectionField[] = [];
   for (const [key, value] of Object.entries(candidate)) {
-    if (key === "lines" || value === null || value === undefined) {
+    if (key === "lines" || value === undefined || !EDITABLE.has(key)) {
       continue;
     }
-    if (EDITABLE.has(key) && (typeof value === "string" || typeof value === "number")) {
+    if (value === null) {
+      fields.push({ path: key, label: key, value: "" });
+      continue;
+    }
+    if (typeof value === "string" || typeof value === "number") {
       fields.push({ path: key, label: key, value: String(value) });
     }
   }

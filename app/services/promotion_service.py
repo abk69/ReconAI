@@ -11,6 +11,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 from uuid import UUID
 
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
@@ -32,6 +33,12 @@ from app.domain.enums import (
     InvoiceStatus,
     PurchaseOrderStatus,
     ReviewStatus,
+)
+from app.extraction.normalizer import normalize_business_value
+from app.extraction.validator import (
+    coerce_candidate,
+    has_hard_validation_errors,
+    validate_candidate,
 )
 from app.review.transitions import PROMOTABLE_STATUSES
 from app.services.review_service import ReviewNotFoundError, ReviewService
@@ -97,6 +104,8 @@ class PromotionService:
                     "Cannot promote UNKNOWN document type; set document type first."
                 )
 
+        self._refuse_invalid_candidate(detected, candidate)
+
         try:
             if detected is DocumentType.PO:
                 entity_id = self._promote_po(document, candidate)
@@ -120,6 +129,18 @@ class PromotionService:
             raise
 
         return self._reviews.get_task(task_id)
+
+    def _refuse_invalid_candidate(self, detected: DocumentType, candidate: dict[str, Any]) -> None:
+        """Keep a validation failure from becoming an authoritative record."""
+        try:
+            parsed = coerce_candidate(detected, candidate)
+        except ValidationError as exc:
+            raise PromotionValidationError(
+                "Candidate failed validation and cannot be promoted."
+            ) from exc
+        validation = validate_candidate(document_type=detected, candidate=parsed)
+        if has_hard_validation_errors(validation):
+            raise PromotionValidationError("Candidate failed validation and cannot be promoted.")
 
     def _promote_po(self, document: Document, candidate: dict[str, Any]) -> UUID:
         po_number = _require_str(candidate, "po_number")
@@ -308,10 +329,12 @@ class PromotionService:
                 return po
 
         po_number = candidate.get("po_number")
-        if isinstance(po_number, str) and po_number.strip():
+        if isinstance(po_number, str):
+            po_number = normalize_business_value(po_number)
+        if po_number:
             return self._session.scalar(
                 select(PurchaseOrder)
-                .where(PurchaseOrder.po_number == po_number.strip())
+                .where(PurchaseOrder.po_number == po_number)
                 .options(selectinload(PurchaseOrder.lines))
             )
         return None

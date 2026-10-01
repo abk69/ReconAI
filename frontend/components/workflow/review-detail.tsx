@@ -8,6 +8,7 @@ import { resourceError, useResource } from "@/components/procurement/use-resourc
 import { ConfirmDialog } from "@/components/workflow/confirm-dialog";
 import { EnumBadge } from "@/components/ui/enum-badge";
 import { FlowRail } from "@/components/ui/flow-rail";
+import { listPurchaseOrders } from "@/lib/api/procurement";
 import {
   approveReviewTask,
   correctReviewTask,
@@ -110,8 +111,36 @@ export function ReviewDetail({ id }: { id: string }) {
   const [reason, setReason] = useState("");
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [fields, setFields] = useState<CorrectionField[]>([]);
+  const [purchaseOrderReady, setPurchaseOrderReady] = useState<boolean | null>(null);
 
   const task = state.kind === "ready" ? state.data : null;
+  const candidate = task?.reviewed_candidate ?? task?.original_candidate ?? null;
+  const poNumber = typeof candidate?.po_number === "string" ? candidate.po_number.trim() : "";
+  const isGoodsReceipt = task?.detected_type === "GRN";
+
+  useEffect(() => {
+    if (!task || !isGoodsReceipt || task.promoted_entity_id) {
+      setPurchaseOrderReady(null);
+      return;
+    }
+    if (!poNumber) {
+      setPurchaseOrderReady(false);
+      return;
+    }
+    let cancelled = false;
+    listPurchaseOrders({ q: poNumber, limit: 20 })
+      .then((page) => {
+        if (!cancelled) {
+          setPurchaseOrderReady(page.items.some((item) => item.po_number === poNumber));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setPurchaseOrderReady(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [task, isGoodsReceipt, poNumber]);
 
   useEffect(() => {
     if (!task) {
@@ -154,21 +183,27 @@ export function ReviewDetail({ id }: { id: string }) {
       <RecordState state={state} loadingTitle="Loading review task" empty={null}>
         {(item) => {
           const open = item.status === "PENDING" || item.status === "IN_REVIEW";
-          const canApprove = open || item.status === "CORRECTED";
+          const validationFailed = item.document_status === "VALIDATION_FAILED";
+          const validationIssues = item.validation_issues ?? [];
+          const ambiguousIssues = validationIssues.filter((issue) => issue.code === "AMBIGUOUS_FIELD");
+          const waitingForPurchaseOrder = isGoodsReceipt && !item.promoted_entity_id && purchaseOrderReady !== true;
+          const canApprove = (open || item.status === "CORRECTED") && !validationFailed && ambiguousIssues.length === 0;
           const canCorrect = open;
           const canReject = open;
           const canPromote =
-            (item.status === "APPROVED" || item.status === "CORRECTED") && !item.promoted_entity_id;
+            (item.status === "APPROVED" || item.status === "CORRECTED") &&
+            !item.promoted_entity_id &&
+            !validationFailed &&
+            ambiguousIssues.length === 0 &&
+            !waitingForPurchaseOrder;
           const href = promotedHref(item.promoted_entity_type, item.promoted_entity_id);
           const changes = changedCorrections();
           return (
             <>
               <div>
-                <p className="text-xs font-medium tracking-wide text-ink-muted uppercase">Human review</p>
-                <h1 className="mt-1 text-2xl font-semibold">Extraction review</h1>
+                <h1 className="mt-1 text-2xl font-semibold">Check this extraction</h1>
                 <p className="mt-2 text-sm leading-6 text-ink-muted">
-                  Extracted values stay visible beside any reviewed correction. Promoted procurement
-                  data is authoritative only after the backend records a promotion.
+                  Approve the fields below, or correct them first. Saving the record is a separate step.
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <EnumBadge value={item.status} kind="status" />
@@ -347,8 +382,31 @@ export function ReviewDetail({ id }: { id: string }) {
                 </form>
               ) : null}
 
+              {ambiguousIssues.length > 0 ? (
+                <section className="space-y-2">
+                  <h2 className="text-base font-semibold text-ink">Ambiguous fields require review</h2>
+                  <ul className="space-y-2 text-sm leading-6">
+                    {ambiguousIssues.map((issue, index) => (
+                      <li key={`${issue.field_name ?? "field"}-${index}`}>{issue.message}</li>
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
+
               <section className="rounded-md border border-line bg-surface p-5">
                 <h2 className="text-base font-semibold">Review actions</h2>
+                {validationFailed ? (
+                  <p className="mt-2 text-sm leading-6 text-ink-muted">
+                    These fields failed their checks. Correct them before this document can be approved or saved.
+                  </p>
+                ) : null}
+                {waitingForPurchaseOrder ? (
+                  <p className="mt-2 text-sm leading-6 text-ink-muted">
+                    {poNumber
+                      ? `Promote purchase order ${poNumber} first.`
+                      : "This goods receipt has no purchase order number, so it cannot be saved yet."}
+                  </p>
+                ) : null}
                 <div className="mt-3 flex flex-wrap gap-2">
                   {canApprove ? (
                     <button type="button" className="min-h-10 rounded-lg bg-brand px-3 py-2 text-sm text-on-brand" onClick={() => setDialog("approve")}>

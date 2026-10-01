@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import UUID
 
+from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
@@ -17,6 +18,7 @@ from app.domain.enums import (
     ReviewPriority,
     ReviewStatus,
 )
+from app.extraction.validator import coerce_candidate, validate_candidate
 from app.review.candidate_ops import (
     CandidatePathError,
     deep_copy_candidate,
@@ -247,6 +249,18 @@ class ReviewService:
         reason: str | None = None,
     ) -> ReviewTask:
         task = self.get_task(task_id)
+        extraction = task.extraction_result
+        if (
+            extraction is not None
+            and extraction.outcome == ExtractionOutcome.VALIDATION_FAILED.value
+        ):
+            raise ReviewValidationError(
+                "A validation failure cannot be approved. Correct the extraction before approval."
+            )
+        if extraction is not None and _has_ambiguous_fields(extraction.validation):
+            raise ReviewValidationError(
+                "Ambiguous fields require review. Correct them before approval."
+            )
         current = ReviewStatus(task.status)
         if current is ReviewStatus.REJECTED:
             raise ReviewValidationError("Rejected review tasks cannot be approved.")
@@ -346,6 +360,7 @@ class ReviewService:
             )
 
         task.reviewed_candidate = working
+        self._sync_outcome_after_correction(task, working)
         task.status = ReviewStatus.CORRECTED.value
         task.completed_at = datetime.now(UTC)
         if reason and not task.reason:
@@ -393,6 +408,33 @@ class ReviewService:
         self._session.commit()
         return self.get_task(task_id)
 
+    def _sync_outcome_after_correction(
+        self,
+        task: ReviewTask,
+        candidate: dict[str, object],
+    ) -> None:
+        """Re-check the corrected candidate against the existing validation contract."""
+        extraction = task.extraction_result
+        if extraction is None or extraction.detected_type not in DocumentType._value2member_map_:
+            return
+        detected = DocumentType(extraction.detected_type)
+        try:
+            parsed = coerce_candidate(detected, candidate)
+        except ValidationError:
+            return
+        result = validate_candidate(document_type=detected, candidate=parsed)
+        extraction.validation = result.model_dump(mode="json")
+        document = self._session.get(Document, task.document_id)
+        if any(issue.severity == "error" for issue in result.issues):
+            extraction.outcome = ExtractionOutcome.VALIDATION_FAILED.value
+            if document is not None:
+                document.status = DocumentStatus.VALIDATION_FAILED.value
+            return
+        if result.is_valid:
+            extraction.outcome = ExtractionOutcome.READY_FOR_RECONCILIATION.value
+            if document is not None:
+                document.status = DocumentStatus.READY_FOR_RECONCILIATION.value
+
     def is_eligible_for_promotion(self, task: ReviewTask) -> bool:
         status = ReviewStatus(task.status)
         if status not in PROMOTABLE_STATUSES:
@@ -413,6 +455,15 @@ class ReviewService:
             raise ReviewValidationError(
                 "Corrected review tasks are finalized; promote or leave as-is."
             )
+
+
+def _has_ambiguous_fields(validation: object) -> bool:
+    if not isinstance(validation, dict):
+        return False
+    issues = validation.get("issues") or []
+    return any(
+        isinstance(issue, dict) and issue.get("code") == "AMBIGUOUS_FIELD" for issue in issues
+    )
 
 
 # Re-export for callers

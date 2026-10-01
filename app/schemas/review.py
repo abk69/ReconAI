@@ -20,6 +20,14 @@ class FieldCorrectionRequest(BaseModel):
     evidence_ref: str | None = Field(default=None, max_length=512)
 
 
+class ReviewCreateRequest(BaseModel):
+    """Ask for a human review task on a stored extraction. Does not approve it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    document_id: UUID
+
+
 class ReviewApproveRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -74,6 +82,7 @@ class ReviewTaskResponse(BaseModel):
     reviewed_candidate: dict[str, Any] | None = None
     original_candidate: dict[str, Any] | None = None
     evidence: list[Any] = Field(default_factory=list)
+    validation_issues: list[dict[str, Any]] = Field(default_factory=list)
     decisions: list[ReviewDecisionResponse] = Field(default_factory=list)
     promoted_entity_type: str | None = None
     promoted_entity_id: UUID | None = None

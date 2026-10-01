@@ -6,8 +6,10 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.db.models import Document, DocumentExtractionResult
 from app.db.session import get_db
 from app.domain.enums import DocumentType, ReviewAction, ReviewPriority, ReviewStatus
 from app.review.transitions import InvalidReviewTransitionError
@@ -15,6 +17,7 @@ from app.schemas.review import (
     PromoteResponse,
     ReviewApproveRequest,
     ReviewCorrectRequest,
+    ReviewCreateRequest,
     ReviewDecisionResponse,
     ReviewRejectRequest,
     ReviewTaskListResponse,
@@ -55,6 +58,14 @@ def _candidate_summary(candidate: dict[str, Any] | None) -> dict[str, Any] | Non
     if isinstance(lines, list):
         summary["line_count"] = len(lines)
     return summary
+
+
+def _validation_issues(extraction: object) -> list[dict]:
+    validation = getattr(extraction, "validation", None)
+    if not isinstance(validation, dict):
+        return []
+    issues = validation.get("issues") or []
+    return [issue for issue in issues if isinstance(issue, dict)]
 
 
 def _to_response(task: object) -> ReviewTaskResponse:
@@ -100,6 +111,7 @@ def _to_response(task: object) -> ReviewTaskResponse:
         reviewed_candidate=reviewed,
         original_candidate=original,
         evidence=evidence or [],
+        validation_issues=_validation_issues(extraction),
         decisions=decisions,
         promoted_entity_type=task.promoted_entity_type,  # type: ignore[attr-defined]
         promoted_entity_id=task.promoted_entity_id,  # type: ignore[attr-defined]
@@ -108,6 +120,37 @@ def _to_response(task: object) -> ReviewTaskResponse:
         updated_at=task.updated_at,  # type: ignore[attr-defined]
         completed_at=task.completed_at,  # type: ignore[attr-defined]
     )
+
+
+@router.post("/tasks", response_model=ReviewTaskResponse)
+def open_review_task(body: ReviewCreateRequest, session: DbSession) -> ReviewTaskResponse:
+    """Create a pending review task for a stored extraction.
+
+    Clean understanding does not create a task by itself. This route does not
+    approve, correct, or promote the candidate.
+    """
+    document = session.get(Document, body.document_id)
+    if document is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Document {body.document_id} was not found.",
+        )
+    extraction = session.scalar(
+        select(DocumentExtractionResult).where(
+            DocumentExtractionResult.document_id == body.document_id
+        )
+    )
+    if extraction is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No understanding result for document {body.document_id}.",
+        )
+    task = ReviewService(session).create_review_task(
+        document_id=document.id,
+        extraction_result_id=extraction.id,
+        reason="Human review requested for a stored extraction.",
+    )
+    return _to_response(task)
 
 
 @router.get("/tasks", response_model=ReviewTaskListResponse)

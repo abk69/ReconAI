@@ -3,16 +3,17 @@
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
 
+import { DocumentActions } from "@/components/documents/document-actions";
 import { Lifecycle, buildLifecycle } from "@/components/documents/lifecycle";
 import { FlowRail } from "@/components/ui/flow-rail";
 import { RecordState } from "@/components/procurement/record-state";
 import { resourceError, useResource } from "@/components/procurement/use-resource";
 import { DataTable } from "@/components/ui/data-table";
-import { EnumBadge } from "@/components/ui/enum-badge";
-import { getLlmUnderstanding, getRawExtraction, getUnderstanding } from "@/lib/api/documents";
+import { getLlmUnderstanding, getRawExtraction, getUnderstanding, understandDocument } from "@/lib/api/documents";
 import { isApiError } from "@/lib/api/errors";
-import { getDocument, getVendor, listExceptions } from "@/lib/api/procurement";
-import { listReviewTasks } from "@/lib/api/workflow";
+import { getDocument, getInvoice, getVendor, listExceptions, listGoodsReceipts, listInvoices, listPurchaseOrders, runReconciliation, type ReconciliationRun } from "@/lib/api/procurement";
+import { listReviewTasks, requestReview } from "@/lib/api/workflow";
+import { invoiceStatusWords, relatedInvoiceSummary } from "@/lib/documents/next-action";
 import { formatTimestamp } from "@/lib/labels";
 import type {
   FieldDiff,
@@ -21,7 +22,7 @@ import type {
   UnderstandingResult,
   ValidationResult,
 } from "@/types/documents";
-import type { DocumentItem, ExceptionList, Vendor } from "@/types/procurement";
+import type { DocumentItem, ExceptionList, InvoiceListItem, Vendor } from "@/types/procurement";
 import type { ReviewTask } from "@/types/workflow";
 
 type Bundle = {
@@ -33,6 +34,13 @@ type Bundle = {
   review: ReviewTask | null;
   vendor: Vendor | null;
   exceptions: ExceptionList | null;
+  purchaseOrderReady: boolean;
+  goodsReceiptReady: boolean;
+  invoiceReady: boolean;
+  invoiceNumber: string | null;
+  reconciliationStatus: string | null;
+  relatedInvoices: InvoiceListItem[];
+  relatedInvoiceSummary: string | null;
 };
 
 function isScalar(value: unknown): value is string | number | boolean | null {
@@ -95,11 +103,27 @@ function RawBlock({ title, value }: { title: string; value: unknown }) {
   );
 }
 
+const FIELD_LABELS: Record<string, string> = {
+  invoice_number: "Invoice number",
+  po_number: "Purchase order",
+  grn_number: "Goods receipt",
+  vendor_name: "Vendor",
+  invoice_date: "Invoice date",
+  order_date: "Order date",
+  receipt_date: "Received",
+  currency: "Currency",
+  subtotal: "Subtotal",
+  tax_amount: "Tax",
+  total_amount: "Total",
+};
+
 function CandidateFields({ candidate, heading }: { candidate: Record<string, unknown> | null; heading: string }) {
   if (!candidate) {
     return <p>No candidate was stored.</p>;
   }
-  const scalars = Object.entries(candidate).filter(([key, value]) => key !== "lines" && key !== "evidence" && isScalar(value));
+  const scalars = Object.entries(candidate).filter(
+    ([key, value]) => key !== "lines" && key !== "evidence" && value !== null && value !== "" && isScalar(value),
+  );
   const lines = Array.isArray(candidate.lines) ? candidate.lines.filter((line) => line && typeof line === "object") : [];
   return (
     <div className="space-y-3">
@@ -108,7 +132,7 @@ function CandidateFields({ candidate, heading }: { candidate: Record<string, unk
         <dl className="grid gap-3 sm:grid-cols-2">
           {scalars.map(([key, value]) => (
             <div key={key}>
-              <dt className="text-xs font-medium tracking-wide text-ink-muted uppercase">{key}</dt>
+              <dt className="text-xs font-medium tracking-wide text-ink-muted uppercase">{FIELD_LABELS[key] ?? key}</dt>
               <dd className="mt-1 break-words">{value === null ? "null" : String(value)}</dd>
             </div>
           ))}
@@ -122,6 +146,7 @@ function CandidateFields({ candidate, heading }: { candidate: Record<string, unk
             rows={lines as Record<string, unknown>[]}
             columns={[
               { key: "n", header: "Line", cell: (row) => String(row.line_number ?? "—") },
+              { key: "item", header: "Item", cell: (row) => String(row.reference ?? "—") },
               { key: "d", header: "Description", cell: (row) => String(row.description ?? "—") },
               { key: "q", header: "Quantity", cell: (row) => String(row.quantity ?? "—") },
               { key: "p", header: "Unit price", cell: (row) => String(row.unit_price ?? "—") },
@@ -234,13 +259,13 @@ function RawExtraction({ documentId }: { documentId: string }) {
   );
 }
 
-function needsReview(document: DocumentItem, review: ReviewTask | null): boolean {
-  return document.status === "REVIEW_REQUIRED" || review?.status === "PENDING" || review?.status === "IN_REVIEW";
-}
-
 export function DocumentIntelligencePage({ id }: { id: string }) {
+  const [revision, setRevision] = useState(0);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [run, setRun] = useState<ReconciliationRun | null>(null);
   const state = useResource(
-    id,
+    `${id}:${revision}`,
     async (signal) => {
       const document = await getDocument(id, signal);
       const [understandingResult, llmResult, reviews, vendor] = await Promise.all([
@@ -259,6 +284,42 @@ export function DocumentIntelligencePage({ id }: { id: string }) {
             ? { goods_receipt_id: document.goods_receipt_id }
             : null;
       const exceptions = linkedId ? await listExceptions({ ...linkedId, limit: 10 }, signal) : null;
+      const candidate = understanding?.candidate ?? null;
+      const poNumber = typeof candidate?.po_number === "string" ? candidate.po_number.trim() : "";
+      let purchaseOrderReady = Boolean(document.purchase_order_id);
+      let goodsReceiptReady = Boolean(document.goods_receipt_id);
+      let purchaseOrderId = document.purchase_order_id;
+      if (poNumber) {
+        const orders = await listPurchaseOrders({ q: poNumber, limit: 20 }, signal);
+        const match = orders.items.find((item) => item.po_number === poNumber);
+        if (match) {
+          purchaseOrderReady = true;
+          purchaseOrderId = match.id;
+        }
+      }
+      if (purchaseOrderId && !goodsReceiptReady) {
+        const receipts = await listGoodsReceipts({ purchase_order_id: purchaseOrderId, limit: 1 }, signal);
+        goodsReceiptReady = receipts.total > 0 || receipts.items.length > 0;
+      }
+      let invoiceReady = Boolean(document.invoice_id);
+      let invoiceNumber: string | null = null;
+      let reconciliationStatus: string | null = null;
+      let relatedInvoices: InvoiceListItem[] = [];
+      const recordType = understanding?.detected_type || document.document_type;
+      if (document.invoice_id) {
+        const invoice = await getInvoice(document.invoice_id, signal);
+        invoiceReady = true;
+        invoiceNumber = invoice.invoice_number;
+        if (invoice.status === "MATCHED" || invoice.status === "EXCEPTION") {
+          reconciliationStatus = invoice.status;
+        }
+      } else if (purchaseOrderId && (recordType === "PO" || recordType === "GRN")) {
+        const invoices = await listInvoices({ purchase_order_id: purchaseOrderId, limit: 50 }, signal);
+        relatedInvoices = [...invoices.items].sort((left, right) =>
+          left.invoice_number.localeCompare(right.invoice_number),
+        );
+        invoiceReady = relatedInvoices.length > 0;
+      }
       return {
         document,
         understanding,
@@ -268,6 +329,13 @@ export function DocumentIntelligencePage({ id }: { id: string }) {
         review: reviews.items[0] ?? null,
         vendor,
         exceptions,
+        purchaseOrderReady,
+        goodsReceiptReady,
+        invoiceReady,
+        invoiceNumber,
+        reconciliationStatus,
+        relatedInvoices,
+        relatedInvoiceSummary: relatedInvoiceSummary(relatedInvoices),
       } satisfies Bundle;
     },
     "Document",
@@ -277,26 +345,111 @@ export function DocumentIntelligencePage({ id }: { id: string }) {
     <div className="mx-auto max-w-6xl space-y-5">
       <RecordState state={state} loadingTitle="Loading document" empty={null}>
         {(bundle) => {
-          const { document, understanding, understandingError, llm, llmError, review, vendor, exceptions } = bundle;
+          const { document, understanding, understandingError, llm, llmError, review, vendor, exceptions, purchaseOrderReady, goodsReceiptReady, invoiceReady, invoiceNumber, reconciliationStatus, relatedInvoices, relatedInvoiceSummary: invoiceSummary } = bundle;
+          async function runAction(name: string, work: () => Promise<unknown>, keepRun = false) {
+            if (busy) return;
+            setBusy(name);
+            setActionError(null);
+            if (!keepRun) setRun(null);
+            try {
+              await work();
+              setRevision((value) => value + 1);
+            } catch (error) {
+              const label =
+                name === "understand" ? "Understanding" : name === "review" ? "Review request" : "Reconciliation";
+              setActionError(resourceError(error, label));
+            } finally {
+              setBusy(null);
+            }
+          }
           const steps = buildLifecycle(document, understanding, review);
+          const validationIssues =
+            understanding?.outcome === "VALIDATION_FAILED" || understanding?.outcome === "REVIEW_REQUIRED"
+              ? (understanding.validation?.issues ?? [])
+              : [];
+          const ambiguousIssues = validationIssues.filter((issue) => issue.code === "AMBIGUOUS_FIELD");
+          const ambiguitySummary = ambiguousIssues
+            .map((issue) => issue.message)
+            .filter((message): message is string => Boolean(message))
+            .join(" ");
           const promotedLink = review?.promoted_entity_id && review.promoted_entity_type
             ? promotedHref(review.promoted_entity_type, review.promoted_entity_id)
             : null;
           return (
             <>
               <div>
-                <p className="text-xs font-medium tracking-wide text-ink-muted uppercase">Document intelligence</p>
                 <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">{document.original_filename}</h1>
-                <p className="mt-2 max-w-3xl text-sm leading-6 text-ink-muted">
-                  An extraction candidate is not authoritative procurement data. A promoted record is
-                  created only after human review.
-                </p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <EnumBadge value={document.document_type} kind="status" />
-                  <EnumBadge value={document.status} kind="status" />
-                </div>
-                <p className="mt-3 text-sm text-ink">Current document status: {document.status}</p>
               </div>
+              <DocumentActions
+                document={document}
+                understanding={understanding}
+                review={review}
+                busy={busy}
+                error={actionError}
+                run={run}
+                purchaseOrderReady={purchaseOrderReady}
+                goodsReceiptReady={goodsReceiptReady}
+                invoiceReady={invoiceReady}
+                invoiceNumber={invoiceNumber}
+                reconciliationStatus={reconciliationStatus}
+                relatedInvoiceSummary={invoiceSummary}
+                ambiguitySummary={ambiguitySummary || null}
+                onUnderstand={() => runAction("understand", () => understandDocument(document.id))}
+                onRequestReview={() => runAction("review", () => requestReview(document.id))}
+                onReconcile={() =>
+                  runAction(
+                    "reconcile",
+                    async () => {
+                      const result = await runReconciliation({
+                        invoice_id: document.invoice_id ?? undefined,
+                      });
+                      setRun(result);
+                    },
+                    true,
+                  )
+                }
+              />
+
+              {ambiguousIssues.length > 0 ? (
+                <section className="space-y-2">
+                  <h2 className="text-base font-semibold text-ink">Ambiguous fields require review</h2>
+                  <ul className="space-y-2 text-sm leading-6">
+                    {ambiguousIssues.map((issue, index) => (
+                      <li key={`${issue.field_name ?? "field"}-${index}`}>{issue.message}</li>
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
+              {validationIssues.some((issue) => issue.code !== "AMBIGUOUS_FIELD") ? (
+                <ul className="space-y-2 text-sm leading-6">
+                  {validationIssues
+                    .filter((issue) => issue.code !== "AMBIGUOUS_FIELD")
+                    .map((issue, index) => (
+                      <li key={`${issue.code ?? "issue"}-${index}`}>{issue.message ?? issue.code ?? "A required field failed its check."}</li>
+                    ))}
+                </ul>
+              ) : null}
+              {relatedInvoices.length > 0 ? (
+                <ul className="space-y-2 text-sm leading-6">
+                  {relatedInvoices.map((invoice) => (
+                    <li key={invoice.id}>
+                      <Link className="text-brand underline" href={`/invoices/${invoice.id}`}>
+                        {invoice.invoice_number}
+                      </Link>
+                      {" — "}
+                      {invoiceStatusWords(invoice.status)}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+
+              {understanding?.candidate ? (
+                <CandidateFields candidate={understanding.candidate} heading="Extracted fields" />
+              ) : null}
+
+              <details className="border-t border-white/8 pt-6">
+                <summary className="cursor-pointer text-sm text-brand">Details</summary>
+                <div className="mt-6 space-y-8">
               <FlowRail
                 label="Stored document stages"
                 steps={[
@@ -311,38 +464,6 @@ export function DocumentIntelligencePage({ id }: { id: string }) {
                   },
                 ]}
               />
-
-              {needsReview(document, review) && review ? (
-                <section className="border-t border-white/8 pt-8">
-                  <h2 className="text-base font-semibold text-ink">Human review required</h2>
-                  <p className="mt-2 text-sm leading-6 text-ink-muted">
-                    Stored review status {review.status}. Consequential review actions stay in the review center.
-                  </p>
-                  <Link className="mt-3 inline-block text-sm text-brand underline" href={`/review/${review.id}`}>
-                    Open review
-                  </Link>
-                </section>
-              ) : null}
-
-              <dl className="grid gap-4 border-t border-white/8 pt-8 sm:grid-cols-2">
-                <div>
-                  <dt className="text-xs font-medium tracking-wide text-ink-muted uppercase">Document id</dt>
-                  <dd className="mt-1 break-all text-sm">{document.id}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-medium tracking-wide text-ink-muted uppercase">Uploaded</dt>
-                  <dd className="mt-1 text-sm">{formatTimestamp(document.created_at)}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-medium tracking-wide text-ink-muted uppercase">Updated</dt>
-                  <dd className="mt-1 text-sm">{formatTimestamp(document.updated_at)}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-medium tracking-wide text-ink-muted uppercase">Detected type</dt>
-                  <dd className="mt-1 text-sm">{understanding?.detected_type ?? "No extraction result is stored."}</dd>
-                </div>
-              </dl>
-
               <Lifecycle steps={steps} />
 
               <Section title="Original document" kicker="1">
@@ -537,6 +658,8 @@ export function DocumentIntelligencePage({ id }: { id: string }) {
                   <p>No reconciliation exceptions reference the linked procurement record.</p>
                 )}
               </Section>
+                </div>
+              </details>
             </>
           );
         }}

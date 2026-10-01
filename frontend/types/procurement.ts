@@ -133,6 +133,14 @@ export type DocumentItem = {
   detected_type?: string | null;
   extraction_outcome?: string | null;
   review_status?: string | null;
+  po_number?: string | null;
+  purchase_order_ready?: boolean;
+  goods_receipt_ready?: boolean;
+  invoice_ready?: boolean;
+  invoice_number?: string | null;
+  reconciliation_status?: string | null;
+  related_invoice_summary?: string | null;
+  ambiguity_summary?: string | null;
 };
 
 export type DocumentList = {

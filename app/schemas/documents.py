@@ -49,6 +49,14 @@ class DocumentListItem(DocumentResponse):
     detected_type: DocumentType | None = None
     extraction_outcome: ExtractionOutcome | None = None
     review_status: ReviewStatus | None = None
+    po_number: str | None = None
+    purchase_order_ready: bool = False
+    goods_receipt_ready: bool = False
+    invoice_ready: bool = False
+    invoice_number: str | None = None
+    reconciliation_status: str | None = None
+    related_invoice_summary: str | None = None
+    ambiguity_summary: str | None = None
 
 
 class DocumentListResponse(BaseModel):

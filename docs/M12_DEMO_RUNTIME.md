@@ -145,10 +145,12 @@ There is no seed loader. Data you type into the UI is yours. The repository's sc
 
 After the dashboard opens:
 
-1. Confirm the summary loads (zeros on an empty database).
-2. Upload a file you created, using the document intake screen. Allowed types are PDF, JPEG, PNG, and XLSX, up to 10 MB.
-3. Run deterministic understanding from that screen. It does not call Gemini.
-4. Read the evaluation evidence in `docs/M11_EVALUATION.md`, or regenerate the offline report:
+1. Confirm the summary loads. An empty database says that no documents or exceptions are recorded.
+2. Upload a file you created. Allowed types are PDF, JPEG, PNG, and XLSX, up to 10 MB. Upload only stores the file. A duplicate file opens the existing document.
+3. Open the document and choose Understand document. That calls deterministic extraction and does not call Gemini. The page shows the stored outcome, detected type, and validation issues.
+4. If the outcome needs review, open the review task. If the extraction is clean, choose Request review. Approve or correct it, then promote it. Promotion writes the authoritative purchase order, goods receipt, or invoice.
+5. From a promoted purchase order or invoice, choose Run reconciliation. The status and any exceptions come from that response. Open an exception to see its stored evidence. A clean match has status `MATCHED` and no exception row.
+6. Read the evaluation evidence in `docs/M11_EVALUATION.md`, or regenerate the offline report:
 
 ```bash
 python -m app.evaluation.m11_report_runner

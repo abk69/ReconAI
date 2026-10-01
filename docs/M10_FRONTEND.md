@@ -238,6 +238,12 @@ Scan jobs are read-only. Trend rows are only the periods the analytics API retur
 
 `/documents` and `/documents/{id}` present the stored path from intake through extraction, review, and promotion. The browser does not extract, validate, score confidence, or call Gemini.
 
+Conflicting values for a critical field, such as two invoice numbers on the same labelled line, stay unresolved. The extraction outcome is `REVIEW_REQUIRED`, the page says ambiguous fields require review, and the review form is where a person chooses the value. The first value is not stored as the authoritative one.
+
+Phrases that say a field was withheld, including `NOT PROVIDED`, `N/A`, `NONE`, and a blank, are stored as missing. They are not shortened into a business identifier.
+
+A purchase order or goods receipt keeps its own status. The documents list does not copy the newest invoice reconciliation onto those rows. When several invoices share that purchase order, the row summarizes them, for example `3 related invoices — 1 matched, 2 with problems`. Each invoice keeps the reconciliation result that belongs to it.
+
 ### Trust boundary
 
 A stored document can have an extraction candidate, a validation result, a human review task, and a promoted procurement record. Those are different objects. The candidate is labeled as a candidate. The promoted invoice, purchase order, or goods receipt is the authoritative record, and only when the review task stores a promotion target.
@@ -257,11 +263,18 @@ Added reads:
 - `GET /documents/{id}/raw-extraction` returns the stored raw extraction when the disclosure is opened. Keys that look like storage paths or secrets are omitted.
 - `GET /review/tasks?document_id=` limits the queue to one document.
 
-`storage_path` remains on the document API response and is not shown. SHA-256, MIME type, extension, and size are shown as stored file metadata. There is no document preview.
+Public document responses omit `storage_path`. SHA-256, MIME type, extension, and size are shown as stored file metadata. There is no document preview.
 
-`POST /documents/{id}/understand` and `POST /documents/{id}/llm-understand` are not called by this workspace.
+`/documents` can upload one file through the existing `POST /documents` multipart field `file`. The browser checks extension, MIME when the browser provides one, emptiness, and the 10 MB limit before sending. A duplicate SHA-256 returns HTTP 200 with `is_duplicate: true` and a link to the existing document. Upload does not start extraction.
 
-`/documents` can upload one file through the existing `POST /documents` multipart field `file`. The browser checks extension, MIME when the browser provides one, emptiness, and the 10 MB limit before sending. The API remains authoritative. A duplicate SHA-256 returns the existing document id and is not shown as a failure. Upload does not start extraction, grounding, reconciliation, resolution, anomaly scanning, or risk scoring.
+The document page then offers the next stored step:
+
+1. `POST /documents/{id}/understand` runs deterministic classification and extraction. It does not call Gemini and does not write a purchase order, goods receipt, or invoice.
+2. A `REVIEW_REQUIRED` outcome already creates a pending review task. A clean `READY_FOR_RECONCILIATION` outcome does not. `POST /review/tasks` with `document_id` opens a pending task for that stored extraction. It does not approve it.
+3. Approve, correct, or reject stays on the review page. Promote stays there too, and only after approval or correction.
+4. `POST /reconciliation/run` is offered after the document is linked to a purchase order or invoice. The page shows the status and exceptions from that response.
+
+`POST /documents/{id}/llm-understand` remains available to the API and is not started by the document page.
 
 ### Lifecycle
 

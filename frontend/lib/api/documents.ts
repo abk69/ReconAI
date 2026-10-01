@@ -31,6 +31,17 @@ export async function uploadDocument(file: File, signal?: AbortSignal): Promise<
   };
 }
 
+export function understandDocument(
+  documentId: string,
+  signal?: AbortSignal,
+): Promise<UnderstandingResult> {
+  return apiRequest(`/documents/${documentId}/understand`, {
+    method: "POST",
+    signal,
+    timeoutMs: 120_000,
+  });
+}
+
 export function getUnderstanding(
   documentId: string,
   signal?: AbortSignal,
