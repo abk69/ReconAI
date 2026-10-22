@@ -9,6 +9,7 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -225,6 +226,14 @@ class DocumentService:
         self._session.add(row)
         try:
             self._session.commit()
+        except IntegrityError:
+            self._session.rollback()
+            with contextlib.suppress(StorageError):
+                self._storage.delete(stored_filename=stored_filename)
+            raced = self._session.scalar(select(Document).where(Document.sha256 == digest))
+            if raced is not None:
+                return raced, True
+            raise DocumentServiceError("Document could not be stored.") from None
         except Exception:
             self._session.rollback()
             with contextlib.suppress(StorageError):

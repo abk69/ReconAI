@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.domain.enums import DocumentType
+from app.extraction.normalizer import is_missing_value
 from app.extraction.schemas import (
     GoodsReceiptCandidate,
     InvoiceCandidate,
@@ -94,9 +95,13 @@ def validate_candidate(
     return ValidationResult(is_valid=is_valid, requires_review=False, issues=issues)
 
 
+def _missing_identifier(value: str | None) -> bool:
+    return not value or is_missing_value(value)
+
+
 def _validate_po(candidate: PurchaseOrderCandidate) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
-    if not candidate.po_number:
+    if _missing_identifier(candidate.po_number):
         issues.append(
             ValidationIssue(
                 code="MISSING_PO_NUMBER",
@@ -104,7 +109,7 @@ def _validate_po(candidate: PurchaseOrderCandidate) -> list[ValidationIssue]:
                 field_name="po_number",
             )
         )
-    if not candidate.vendor_name:
+    if _missing_identifier(candidate.vendor_name):
         issues.append(
             ValidationIssue(
                 code="MISSING_VENDOR",
@@ -134,7 +139,7 @@ def _validate_po(candidate: PurchaseOrderCandidate) -> list[ValidationIssue]:
 
 def _validate_grn(candidate: GoodsReceiptCandidate) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
-    if not candidate.grn_number:
+    if _missing_identifier(candidate.grn_number):
         issues.append(
             ValidationIssue(
                 code="MISSING_GRN_NUMBER",
@@ -180,7 +185,7 @@ def _validate_grn(candidate: GoodsReceiptCandidate) -> list[ValidationIssue]:
 
 def _validate_invoice(candidate: InvoiceCandidate) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
-    if not candidate.invoice_number:
+    if _missing_identifier(candidate.invoice_number):
         issues.append(
             ValidationIssue(
                 code="MISSING_INVOICE_NUMBER",
@@ -188,7 +193,7 @@ def _validate_invoice(candidate: InvoiceCandidate) -> list[ValidationIssue]:
                 field_name="invoice_number",
             )
         )
-    if not candidate.vendor_name:
+    if _missing_identifier(candidate.vendor_name):
         issues.append(
             ValidationIssue(
                 code="MISSING_VENDOR",

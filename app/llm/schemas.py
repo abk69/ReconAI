@@ -10,6 +10,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.extraction.normalizer import normalize_business_value
+
 PROMPT_VERSION = "m6-1.0"
 
 DocumentTypeLiteral = Literal["PO", "GRN", "INVOICE", "UNKNOWN"]
@@ -78,36 +80,36 @@ def gemini_output_to_candidate(output: GeminiExtractionOutput) -> dict[str, Any]
 
     if doc_type == "PO":
         return {
-            "po_number": output.po_number,
-            "vendor_name": output.vendor_name,
+            "po_number": normalize_business_value(output.po_number),
+            "vendor_name": normalize_business_value(output.vendor_name),
             "order_date": output.order_date,
-            "currency": output.currency,
+            "currency": normalize_business_value(output.currency),
             "lines": lines,
         }
     if doc_type == "GRN":
         return {
-            "grn_number": output.grn_number,
-            "po_number": output.po_number,
+            "grn_number": normalize_business_value(output.grn_number),
+            "po_number": normalize_business_value(output.po_number),
             "receipt_date": output.receipt_date,
-            "vendor_name": output.vendor_name,
+            "vendor_name": normalize_business_value(output.vendor_name),
             "lines": lines,
         }
     if doc_type == "INVOICE":
         return {
-            "invoice_number": output.invoice_number,
-            "po_number": output.po_number,
-            "vendor_name": output.vendor_name,
+            "invoice_number": normalize_business_value(output.invoice_number),
+            "po_number": normalize_business_value(output.po_number),
+            "vendor_name": normalize_business_value(output.vendor_name),
             "invoice_date": output.invoice_date,
-            "currency": output.currency,
+            "currency": normalize_business_value(output.currency),
             "subtotal": output.subtotal,
             "tax_amount": output.tax_amount,
             "total_amount": output.total_amount,
             "lines": lines,
         }
     return {
-        "invoice_number": output.invoice_number,
-        "po_number": output.po_number,
-        "grn_number": output.grn_number,
-        "vendor_name": output.vendor_name,
+        "invoice_number": normalize_business_value(output.invoice_number),
+        "po_number": normalize_business_value(output.po_number),
+        "grn_number": normalize_business_value(output.grn_number),
+        "vendor_name": normalize_business_value(output.vendor_name),
         "lines": lines,
     }

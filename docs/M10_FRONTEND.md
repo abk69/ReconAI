@@ -149,7 +149,7 @@ Empty lists and “backend unavailable” stay separate. A zero total is an empt
 
 ## M10.4 — Exception and human review center
 
-The exception queue, extraction review center, and resolution center read persisted records. The browser does not re-run reconciliation, extraction, policy grounding, or resolution planning.
+The exception queue, extraction review center, and resolution center read persisted records on load. The browser does not re-run reconciliation, extraction, policy grounding, or resolution planning until the operator confirms an explicit mutation.
 
 ### APIs
 
@@ -170,7 +170,7 @@ Added reads, without new workflow rules:
 
 `/exceptions` is the operational queue. Filters are sent to the existing exception list. `/exceptions/{id}` shows the stored message as the reconciliation fact, stored evidence, source records, document ids, exception status, stored policy grounding, and links to resolution plans.
 
-If no grounding row exists, the page says policy grounding is unavailable. AI explanation text is labeled as an AI-assisted policy explanation and is kept separate from the fact.
+If no grounding row exists, the page says policy grounding is unavailable. Explicit buttons can call `POST …/policy-explanation` and `POST …/resolution-plan` after confirmation. Those mutations may call Gemini and are never started by opening the page. AI explanation text is labeled as an AI-assisted policy explanation and is kept separate from the fact.
 
 ### Review workflow
 
@@ -270,9 +270,9 @@ Public document responses omit `storage_path`. SHA-256, MIME type, extension, an
 The document page then offers the next stored step:
 
 1. `POST /documents/{id}/understand` runs deterministic classification and extraction. It does not call Gemini and does not write a purchase order, goods receipt, or invoice.
-2. A `REVIEW_REQUIRED` outcome already creates a pending review task. A clean `READY_FOR_RECONCILIATION` outcome does not. `POST /review/tasks` with `document_id` opens a pending task for that stored extraction. It does not approve it.
+2. A `REVIEW_REQUIRED` outcome already creates a pending review task. A clean `READY_FOR_RECONCILIATION` outcome means the extraction candidate passed validation; it does not mean the record was promoted or matched, and it does not create a review task. `POST /review/tasks` with `document_id` opens a pending task for that stored extraction. It does not approve it.
 3. Approve, correct, or reject stays on the review page. Promote stays there too, and only after approval or correction.
-4. `POST /reconciliation/run` is offered after the document is linked to a purchase order or invoice. The page shows the status and exceptions from that response.
+4. `POST /reconciliation/run` is offered after the document is linked to a purchase order or invoice. Matching is per invoice against its PO and GRN; sibling invoice quantities are not aggregated. The page shows the status and exceptions from that response.
 
 `POST /documents/{id}/llm-understand` remains available to the API and is not started by the document page.
 
@@ -306,7 +306,7 @@ Search is an explicit submit on the version page. It calls the existing `POST /p
 
 ### Grounding and resolution
 
-`/exceptions/{id}` keeps section-level loads for stored policy grounding and resolution plans. It does not call `POST …/policy-explanation` or `POST …/resolution-plan`.
+`/exceptions/{id}` loads stored policy grounding and resolution plans on read. Generating a new explanation or plan is an explicit confirmed action. It is not started by opening the page.
 
 Grounding status is shown as stored: `SUPPORTED`, `INSUFFICIENT_EVIDENCE`, `CONFLICTING_POLICY`, or `PROVIDER_ERROR`. Insufficient evidence is abstention, not an error. A conflict lists the cited versions and does not pick one. A provider error says the explanation could not be generated. Citations render only the fields stored on the grounding result, with links when policy and version ids are present. An empty grounding list says no grounding is stored.
 

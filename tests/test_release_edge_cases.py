@@ -9,22 +9,30 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.core.safe_text import sanitize_public_message
 from app.db.models import (
+    DocumentExtractionResult,
     GoodsReceipt,
     Invoice,
     PurchaseOrder,
     ReconciliationException,
 )
 from app.domain.enums import (
+    DocumentType,
     ExceptionType,
     ExtractionOutcome,
     GoodsReceiptStatus,
     InvoiceStatus,
     PurchaseOrderStatus,
     ReconciliationStatus,
+    ReviewStatus,
 )
 from app.extraction.base import read_labelled_field
 from app.extraction.normalizer import is_missing_value, normalize_business_value
+from app.extraction.schemas import InvoiceCandidate
+from app.extraction.validator import has_hard_validation_errors, validate_candidate
+from app.llm.schemas import GeminiExtractionOutput, gemini_output_to_candidate
+from app.review.candidate_ops import CandidatePathError, coerce_correction_value
 from app.services.document_service import DocumentService
 from app.services.document_understanding_service import DocumentUnderstandingService
 from app.services.promotion_service import PromotionNotAllowedError, PromotionService
@@ -359,3 +367,117 @@ def test_shared_po_summary_after_quantity_then_clean_then_price(
     workflow, db_session: Session
 ) -> None:
     _reconcile_set(workflow, db_session, ["INV-1003", "INV-1001", "INV-1002"])
+
+
+def test_placeholder_identifiers_fail_validation_and_cannot_be_corrected(
+    workflow, db_session: Session
+) -> None:
+    docs, understanding, reviews, _promotion = workflow
+    row, _, result = _understand(
+        docs, understanding, "06_missing_fields_invoice.pdf", _missing_po_invoice()
+    )
+    assert result.candidate is not None
+    invalid = dict(result.candidate)
+    invalid["invoice_number"] = "NOT PROVIDED"
+    parsed = InvoiceCandidate.model_validate(invalid)
+    validation = validate_candidate(document_type=DocumentType.INVOICE, candidate=parsed)
+    assert has_hard_validation_errors(validation)
+
+    extraction = db_session.scalar(
+        select(DocumentExtractionResult).where(DocumentExtractionResult.document_id == row.id)
+    )
+    assert extraction is not None
+    task = reviews.create_review_task(
+        document_id=row.id, extraction_result_id=extraction.id
+    )
+    with pytest.raises(ReviewValidationError, match="cannot be empty"):
+        reviews.correct(
+            task.id,
+            corrections=[{"field_path": "invoice_number", "corrected_value": "N/A"}],
+            reviewer="qa",
+        )
+
+
+def test_placeholder_strings_cannot_be_corrected_or_promoted() -> None:
+    for phrase in ("N/A", "NOT PROVIDED", "NONE", "NULL"):
+        with pytest.raises(CandidatePathError):
+            coerce_correction_value("invoice_number", phrase)
+        with pytest.raises(CandidatePathError):
+            coerce_correction_value("po_number", phrase)
+        with pytest.raises(CandidatePathError):
+            coerce_correction_value("vendor_name", phrase)
+
+
+def test_gemini_placeholder_identifiers_are_dropped() -> None:
+    output = GeminiExtractionOutput(
+        document_type="INVOICE",
+        invoice_number="NOT PROVIDED",
+        po_number="N/A",
+        vendor_name="NONE",
+        invoice_date="2026-09-01",
+        currency="USD",
+        lines=[],
+    )
+    candidate = gemini_output_to_candidate(output)
+    assert candidate["invoice_number"] is None
+    assert candidate["po_number"] is None
+    assert candidate["vendor_name"] is None
+    assert candidate["currency"] == "USD"
+
+
+def test_public_messages_do_not_include_paths() -> None:
+    leaked = sanitize_public_message(
+        r"Failed to write document to storage: C:\Users\LENOVO\secret\file.pdf",
+        fallback="The stored file could not be read.",
+    )
+    assert leaked == "The stored file could not be read."
+    unix = sanitize_public_message(
+        "Extractor failed: /var/lib/reconai/storage/abc.pdf missing",
+        fallback="Extraction failed.",
+    )
+    assert unix == "Extraction failed."
+    assert sanitize_public_message("Ambiguous fields require review.", fallback="x") == (
+        "Ambiguous fields require review."
+    )
+
+
+def test_invalid_correction_stays_open_for_another_edit(db_session: Session) -> None:
+    from tests.test_review_m5 import _seed_extraction
+
+    document, extraction = _seed_extraction(db_session)
+    candidate = dict(extraction.candidate or {})
+    candidate["invoice_number"] = None
+    extraction.candidate = candidate
+    extraction.outcome = ExtractionOutcome.REVIEW_REQUIRED.value
+    extraction.validation = {
+        "is_valid": False,
+        "requires_review": True,
+        "issues": [
+            {
+                "code": "MISSING_INVOICE_NUMBER",
+                "message": "Invoice number is required.",
+                "field_name": "invoice_number",
+                "severity": "error",
+            }
+        ],
+    }
+    db_session.commit()
+    reviews = ReviewService(db_session)
+    promotion = PromotionService(db_session)
+    task = reviews.create_review_task(
+        document_id=document.id, extraction_result_id=extraction.id
+    )
+    with pytest.raises(ReviewValidationError):
+        reviews.approve(task.id, reviewer="qa")
+    with pytest.raises(PromotionNotAllowedError):
+        promotion.promote(task.id)
+    reviews.correct(
+        task.id,
+        corrections=[{"field_path": "lines[0].quantity", "corrected_value": "11"}],
+        reviewer="qa",
+    )
+    db_session.refresh(task)
+    assert task.status == ReviewStatus.IN_REVIEW.value
+    stored = db_session.get(DocumentExtractionResult, extraction.id)
+    assert stored is not None
+    assert stored.outcome == ExtractionOutcome.VALIDATION_FAILED.value

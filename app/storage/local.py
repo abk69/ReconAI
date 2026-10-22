@@ -26,7 +26,7 @@ class LocalFileStorage(StorageBackend):
         try:
             self._root.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
-            raise StorageError(f"Unable to create storage directory: {self._root}") from exc
+            raise StorageError("Unable to create storage directory.") from exc
 
     def _resolve_safe_path(self, stored_filename: str) -> Path:
         """Resolve a stored filename under the root, rejecting path traversal."""
@@ -55,7 +55,7 @@ class LocalFileStorage(StorageBackend):
         try:
             path.write_bytes(data)
         except OSError as exc:
-            raise StorageError(f"Failed to write document to storage: {path}") from exc
+            raise StorageError("Failed to write document to storage.") from exc
         return stored_filename, path
 
     def delete(self, *, stored_filename: str) -> None:
@@ -64,7 +64,7 @@ class LocalFileStorage(StorageBackend):
             if path.exists():
                 path.unlink()
         except OSError as exc:
-            raise StorageError(f"Failed to delete stored document: {path}") from exc
+            raise StorageError("Failed to delete stored document.") from exc
 
     def exists(self, *, stored_filename: str) -> bool:
         path = self._resolve_safe_path(stored_filename)
@@ -74,8 +74,8 @@ class LocalFileStorage(StorageBackend):
         """Read stored binary content. Never exposes a user-controlled path."""
         path = self._resolve_safe_path(stored_filename)
         if not path.exists():
-            raise StorageError(f"Stored document not found: {stored_filename}")
+            raise StorageError("Stored document not found.")
         try:
             return path.read_bytes()
         except OSError as exc:
-            raise StorageError(f"Failed to read stored document: {stored_filename}") from exc
+            raise StorageError("Failed to read stored document.") from exc

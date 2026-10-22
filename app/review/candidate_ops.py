@@ -8,6 +8,8 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from app.extraction.normalizer import normalize_business_value
+
 _DECIMAL_FIELDS = frozenset(
     {
         "quantity",
@@ -138,6 +140,8 @@ def coerce_correction_value(field_name: str, value: Any) -> Any:
         "reference",
     }:
         text = str(value).strip()
+        if field_name in {"po_number", "grn_number", "invoice_number", "vendor_name"}:
+            text = normalize_business_value(text) or ""
         if not text:
             raise CandidatePathError(f"Field {field_name} cannot be empty.")
         if field_name == "currency" and len(text) != 3:

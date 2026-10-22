@@ -29,8 +29,10 @@ An unexpected exception returns HTTP 500:
 
 That body does not include the exception message, a traceback, a database URL, a filesystem path, or a provider payload. The matching server log is `application_error` plus the request id.
 
+Understanding and storage failures persist a short client-safe `message`. Filesystem paths and secret-like text are replaced with a fallback. Raw extraction payloads also omit those error strings.
+
 ## Logging
 
 Access logs record method, path, status, duration, and request id. The path does not include the query string.
 
-Logs do not include API keys, `Authorization` headers, cookies, `DATABASE_URL`, passwords, document contents, OCR text, vendor or policy text, Gemini prompts, Gemini responses, or uploaded bytes. Provider failures log a stable category such as `TIMEOUT`, plus the request id. Gemini success logs may include the model name and token counts.
+Logs do not include API keys, `Authorization` headers, cookies, `DATABASE_URL`, passwords, document contents, OCR text, vendor or policy text, Gemini prompts, Gemini responses, or uploaded bytes. Provider failures log a stable category such as `TIMEOUT`, plus the request id. Gemini success logs may include the model name and token counts. Persisted LLM `error_message` stores the error code, not the provider exception text.

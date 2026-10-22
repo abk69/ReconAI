@@ -18,7 +18,11 @@ from app.domain.enums import (
     ReviewPriority,
     ReviewStatus,
 )
-from app.extraction.validator import coerce_candidate, validate_candidate
+from app.extraction.validator import (
+    coerce_candidate,
+    has_hard_validation_errors,
+    validate_candidate,
+)
 from app.review.candidate_ops import (
     CandidatePathError,
     deep_copy_candidate,
@@ -250,17 +254,11 @@ class ReviewService:
     ) -> ReviewTask:
         task = self.get_task(task_id)
         extraction = task.extraction_result
-        if (
-            extraction is not None
-            and extraction.outcome == ExtractionOutcome.VALIDATION_FAILED.value
-        ):
-            raise ReviewValidationError(
-                "A validation failure cannot be approved. Correct the extraction before approval."
-            )
-        if extraction is not None and _has_ambiguous_fields(extraction.validation):
-            raise ReviewValidationError(
-                "Ambiguous fields require review. Correct them before approval."
-            )
+        candidate = task.reviewed_candidate
+        if candidate is None and extraction is not None:
+            candidate = extraction.candidate
+        if extraction is not None:
+            self._refuse_invalid_approval(extraction, candidate)
         current = ReviewStatus(task.status)
         if current is ReviewStatus.REJECTED:
             raise ReviewValidationError("Rejected review tasks cannot be approved.")
@@ -312,7 +310,6 @@ class ReviewService:
             assert_transition(current, ReviewStatus.IN_REVIEW)
             task.status = ReviewStatus.IN_REVIEW.value
             current = ReviewStatus.IN_REVIEW
-        assert_transition(current, ReviewStatus.CORRECTED)
 
         working = deep_copy_candidate(
             task.reviewed_candidate
@@ -361,12 +358,18 @@ class ReviewService:
 
         task.reviewed_candidate = working
         self._sync_outcome_after_correction(task, working)
-        task.status = ReviewStatus.CORRECTED.value
-        task.completed_at = datetime.now(UTC)
-        if reason and not task.reason:
-            task.reason = reason
         if reviewer:
             task.assigned_to = reviewer
+        if reason and not task.reason:
+            task.reason = reason
+        if self._candidate_still_invalid(task):
+            task.status = ReviewStatus.IN_REVIEW.value
+            task.completed_at = None
+            self._session.commit()
+            return self.get_task(task_id)
+        assert_transition(current, ReviewStatus.CORRECTED)
+        task.status = ReviewStatus.CORRECTED.value
+        task.completed_at = datetime.now(UTC)
         self._session.commit()
         return self.get_task(task_id)
 
@@ -439,10 +442,55 @@ class ReviewService:
         status = ReviewStatus(task.status)
         if status not in PROMOTABLE_STATUSES:
             return False
+        if self._candidate_still_invalid(task):
+            return False
         candidate = task.reviewed_candidate
         if candidate is None and task.extraction_result is not None:
             candidate = task.extraction_result.candidate
         return candidate is not None
+
+    def _refuse_invalid_approval(
+        self,
+        extraction: DocumentExtractionResult,
+        candidate: object,
+    ) -> None:
+        if extraction.outcome == ExtractionOutcome.VALIDATION_FAILED.value:
+            raise ReviewValidationError(
+                "A validation failure cannot be approved. Correct the extraction before approval."
+            )
+        if _has_ambiguous_fields(extraction.validation):
+            raise ReviewValidationError(
+                "Ambiguous fields require review. Correct them before approval."
+            )
+        if extraction.detected_type not in DocumentType._value2member_map_:
+            return
+        if not isinstance(candidate, dict):
+            return
+        detected = DocumentType(extraction.detected_type)
+        try:
+            parsed = coerce_candidate(detected, candidate)
+        except ValidationError as exc:
+            raise ReviewValidationError(
+                "The current candidate failed validation and cannot be approved."
+            ) from exc
+        result = validate_candidate(document_type=detected, candidate=parsed)
+        if has_hard_validation_errors(result):
+            raise ReviewValidationError(
+                "A validation failure cannot be approved. Correct the extraction before approval."
+            )
+        if any(issue.code == "AMBIGUOUS_FIELD" for issue in result.issues):
+            raise ReviewValidationError(
+                "Ambiguous fields require review. Correct them before approval."
+            )
+
+    def _candidate_still_invalid(self, task: ReviewTask) -> bool:
+        extraction = task.extraction_result
+        if extraction is None:
+            return False
+        if extraction.outcome == ExtractionOutcome.VALIDATION_FAILED.value:
+            return True
+        validation = extraction.validation
+        return _has_ambiguous_fields(validation) or _has_hard_errors(validation)
 
     def _ensure_active(self, task: ReviewTask) -> None:
         status = ReviewStatus(task.status)
@@ -451,7 +499,8 @@ class ReviewService:
         if status is ReviewStatus.APPROVED:
             raise ReviewValidationError("Approved review tasks cannot be modified.")
         if status is ReviewStatus.CORRECTED:
-            # Allow approve after correct via separate transition only.
+            if task.promoted_entity_id is None and self._candidate_still_invalid(task):
+                return
             raise ReviewValidationError(
                 "Corrected review tasks are finalized; promote or leave as-is."
             )
@@ -464,6 +513,13 @@ def _has_ambiguous_fields(validation: object) -> bool:
     return any(
         isinstance(issue, dict) and issue.get("code") == "AMBIGUOUS_FIELD" for issue in issues
     )
+
+
+def _has_hard_errors(validation: object) -> bool:
+    if not isinstance(validation, dict):
+        return False
+    issues = validation.get("issues") or []
+    return any(isinstance(issue, dict) and issue.get("severity") == "error" for issue in issues)
 
 
 # Re-export for callers

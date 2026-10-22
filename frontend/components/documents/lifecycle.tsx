@@ -46,7 +46,10 @@ export function buildLifecycle(
   }
 
   let decisionState: LifecycleStep["state"] = "Not reached";
+  const validationFailed = understanding?.outcome === "VALIDATION_FAILED" || status === "VALIDATION_FAILED";
   if (reviewStatus === "REJECTED" || status === "REVIEW_REJECTED") {
+    decisionState = "Current";
+  } else if (reviewStatus === "CORRECTED" && validationFailed && !promoted) {
     decisionState = "Current";
   } else if (reviewStatus === "APPROVED" || reviewStatus === "CORRECTED" || promoted) {
     decisionState = "Reached";
@@ -96,7 +99,9 @@ export function buildLifecycle(
       label: "Approved or corrected",
       state: decisionState,
       note:
-        reviewStatus === "APPROVED" || reviewStatus === "CORRECTED"
+        reviewStatus === "CORRECTED" && validationFailed && !promoted
+          ? "A correction was stored, but the candidate still fails validation."
+          : reviewStatus === "APPROVED" || reviewStatus === "CORRECTED"
           ? `Stored review status ${reviewStatus}${
               review?.completed_at ? `. Completed ${formatTimestamp(review.completed_at)}` : ""
             }.`

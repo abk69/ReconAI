@@ -111,7 +111,7 @@ Open `http://localhost:3000`. The dashboard calls `NEXT_PUBLIC_API_BASE_URL`.
 
 ## Gemini
 
-Leave `GEMINI_API_KEY` empty to use reconciliation, review, documents, anomalies, and the offline evaluation runners. Set it in the backend `.env` only when you want live extraction, grounding, or planning. Do not put the key in `frontend/.env.local` or in a `NEXT_PUBLIC_` variable.
+Leave `GEMINI_API_KEY` empty to use reconciliation, review, documents, anomalies, and the offline evaluation runners. Gemini-backed policy explanations and resolution planning require `GEMINI_API_KEY`. Live Gemini tests and live extraction may incur provider cost. Set the key in the backend `.env` only when you want live extraction, grounding, or planning. Do not put the key in `frontend/.env.local` or in a `NEXT_PUBLIC_` variable.
 
 ## Health and readiness
 
@@ -149,8 +149,9 @@ After the dashboard opens:
 2. Upload a file you created. Allowed types are PDF, JPEG, PNG, and XLSX, up to 10 MB. Upload only stores the file. A duplicate file opens the existing document.
 3. Open the document and choose Understand document. That calls deterministic extraction and does not call Gemini. The page shows the stored outcome, detected type, and validation issues.
 4. If the outcome needs review, open the review task. If the extraction is clean, choose Request review. Approve or correct it, then promote it. Promotion writes the authoritative purchase order, goods receipt, or invoice.
-5. From a promoted purchase order or invoice, choose Run reconciliation. The status and any exceptions come from that response. Open an exception to see its stored evidence. A clean match has status `MATCHED` and no exception row.
-6. Read the evaluation evidence in `docs/M11_EVALUATION.md`, or regenerate the offline report:
+5. From a promoted invoice, confirm Run reconciliation. The status and any exceptions come from that response. Open an exception to see its stored evidence. A clean match has status `MATCHED` and no exception row. A document that has not been reconciled is not shown as matched.
+6. JPEG/PNG understanding needs the Tesseract binary on `PATH`. Without it, the stored outcome is review-required with `OCR_UNAVAILABLE`. PDF and XLSX do not need Tesseract.
+7. Read the evaluation evidence in `docs/M11_EVALUATION.md`, or regenerate the offline report:
 
 ```bash
 python -m app.evaluation.m11_report_runner
@@ -176,6 +177,8 @@ Add `-v` only when you intend to delete the database volume.
 - Password authentication failed after an edit to `POSTGRES_PASSWORD`: recreate the volume with `docker compose down -v`, then `docker compose up -d` and `alembic upgrade head`.
 - The UI cannot reach the API: API is on port 8000, `NEXT_PUBLIC_API_BASE_URL` is `http://localhost:8000`, and `CORS_ORIGINS` includes `http://localhost:3000`. Restart `npm run dev` after changing `frontend/.env.local`.
 - Port 5432 is already in use: stop the other Postgres or do not start a second Compose project.
+- Understanding fails: the stored outcome, validation issues, and evidence are on the document page. Retry understanding after `EXTRACTION_FAILED`. Correct fields in review after `VALIDATION_FAILED`.
+- Reconciliation is incomplete: promote the linked purchase order and goods receipt first. A price or quantity mismatch stores an exception; it is not a match.
 
 ## Security notes
 

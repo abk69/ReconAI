@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { RecordState } from "@/components/procurement/record-state";
 import { resourceError, useResource } from "@/components/procurement/use-resource";
@@ -156,7 +156,12 @@ export function ReviewDetail({ id }: { id: string }) {
     setDrafts(nextDrafts);
   }, [task]);
 
+  const submitting = useRef(false);
   async function run(action: () => Promise<{ status: string }>, success: (status: string) => string) {
+    if (submitting.current) {
+      return;
+    }
+    submitting.current = true;
     setBusy(true);
     setNotice(null);
     setError(null);
@@ -168,6 +173,7 @@ export function ReviewDetail({ id }: { id: string }) {
     } catch (caught) {
       setError(resourceError(caught, "Review action"));
     } finally {
+      submitting.current = false;
       setBusy(false);
     }
   }
@@ -186,15 +192,18 @@ export function ReviewDetail({ id }: { id: string }) {
           const validationFailed = item.document_status === "VALIDATION_FAILED";
           const validationIssues = item.validation_issues ?? [];
           const ambiguousIssues = validationIssues.filter((issue) => issue.code === "AMBIGUOUS_FIELD");
+          const hardErrors = validationIssues.filter((issue) => issue.severity === "error");
+          const blockedByValidation = validationFailed || ambiguousIssues.length > 0 || hardErrors.length > 0;
           const waitingForPurchaseOrder = isGoodsReceipt && !item.promoted_entity_id && purchaseOrderReady !== true;
-          const canApprove = (open || item.status === "CORRECTED") && !validationFailed && ambiguousIssues.length === 0;
-          const canCorrect = open;
+          const canApprove = (open || item.status === "CORRECTED") && !blockedByValidation;
+          const canCorrect =
+            open ||
+            (item.status === "CORRECTED" && !item.promoted_entity_id && blockedByValidation);
           const canReject = open;
           const canPromote =
             (item.status === "APPROVED" || item.status === "CORRECTED") &&
             !item.promoted_entity_id &&
-            !validationFailed &&
-            ambiguousIssues.length === 0 &&
+            !blockedByValidation &&
             !waitingForPurchaseOrder;
           const href = promotedHref(item.promoted_entity_type, item.promoted_entity_id);
           const changes = changedCorrections();

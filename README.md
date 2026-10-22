@@ -12,6 +12,24 @@ Intelligent procurement reconciliation and exception-resolution platform.
 **Controlled agentic resolution (M8) may propose typed workflow actions — never freely mutate financial records.**  
 **Anomaly intelligence (M9) emits explainable risk signals — never fraud determinations or financial mutations.**
 
+## Document workflow
+
+These stages are separate. A later stage is never implied by an earlier one.
+
+| Stage | What it means | Typical action |
+| --- | --- | --- |
+| Upload | File stored and type/size validated. Status `VALIDATED`. | Open the document |
+| Understand | Deterministic extraction into an untrusted candidate. Does not call Gemini. | `POST /documents/{id}/understand` |
+| Review | Human approve / correct / reject. Invalid candidates stay blocked. | Review queue |
+| Promote | Transactional write of PO / GRN / Invoice. Idempotent. | After `APPROVED` or valid `CORRECTED` |
+| Reconcile | Deterministic three-way match of one invoice against its PO and GRN | `POST /reconciliation/run` |
+
+`READY_FOR_RECONCILIATION` on a document after understanding means the **candidate passed validation**. It does not mean a PO/GRN/Invoice row exists, it does not mean the record was promoted, and it does not mean a match ran. `MATCHED` is stored on the invoice after a persisted reconciliation run. A missing run is not a match.
+
+Matching is currently **per invoice against its linked purchase order and goods receipts**. Quantities on sibling invoices for the same PO are not aggregated.
+
+Duplicate uploads with the same SHA-256 return the existing document (`is_duplicate: true`). Phrases such as `NOT PROVIDED`, `N/A`, and `NONE` are missing values, not identifiers.
+
 ## Milestones
 
 | Milestone | Status |
@@ -312,7 +330,7 @@ GET  /documents/{id}/llm-understanding
 ### Configuration
 
 ```bash
-GEMINI_API_KEY=           # required for live calls; never commit
+GEMINI_API_KEY=           # required for live Gemini extraction, policy explanations, and resolution planning; never commit
 LLM_PROVIDER=google
 LLM_MODEL=gemini-3.1-flash-lite
 LLM_TIMEOUT_SECONDS=45
@@ -325,11 +343,11 @@ LLM_MAX_RETRIES=1
 
 ```bash
 pytest -q                     # offline suite (excludes live_* markers)
-pytest -m live_llm -q         # opt-in real Gemini extraction (needs GEMINI_API_KEY)
-pytest -m live_embedding -q   # opt-in real Gemini embeddings (needs GEMINI_API_KEY)
-pytest -m live_grounding -q   # opt-in grounded policy RAG (needs GEMINI_API_KEY)
-pytest -m live_rag_eval -q    # opt-in M7.5 live RAG smoke (needs GEMINI_API_KEY)
-pytest -m live_resolution_eval -q  # opt-in M8.7 live planner smoke (needs GEMINI_API_KEY)
+pytest -m live_llm -q         # opt-in real Gemini extraction (needs GEMINI_API_KEY; may incur cost)
+pytest -m live_embedding -q   # opt-in real Gemini embeddings (needs GEMINI_API_KEY; may incur cost)
+pytest -m live_grounding -q   # opt-in grounded policy RAG (needs GEMINI_API_KEY; may incur cost)
+pytest -m live_rag_eval -q    # opt-in M7.5 live RAG smoke (needs GEMINI_API_KEY; may incur cost)
+pytest -m live_resolution_eval -q  # opt-in M8.7 live planner smoke (needs GEMINI_API_KEY; may incur cost)
 python -m app.evaluation.m6_runner
 python -m app.evaluation.m7_runner
 python -m app.evaluation.m8_runner
@@ -391,7 +409,7 @@ Filters: `status`, `document_type`, `priority`. Responses never expose filesyste
 
 ### Field-level correction + audit
 
-Corrections use field paths such as `lines[0].quantity`. The original M4 `DocumentExtractionResult.candidate` is never overwritten. Each decision stores reviewer, timestamp, action, field path, original value, corrected value, and reason.
+Corrections use field paths such as `lines[0].quantity`. The original M4 `DocumentExtractionResult.candidate` is never overwritten. Each decision stores reviewer, timestamp, action, field path, original value, corrected value, and reason. After correction the candidate is revalidated. If required fields still fail, the task stays `IN_REVIEW` and cannot be approved or promoted.
 
 ### Evaluation (separate from review)
 
@@ -433,7 +451,7 @@ Stored Document
     → DocumentStatus: READY_FOR_RECONCILIATION | REVIEW_REQUIRED | VALIDATION_FAILED
 ```
 
-Supported formats: PDF (PyMuPDF), XLSX (openpyxl), JPEG/PNG (optional Tesseract — graceful `REVIEW_REQUIRED` if unavailable).
+Supported formats: PDF (PyMuPDF), XLSX (openpyxl), JPEG/PNG. Image OCR uses Tesseract when the `tesseract` binary is on `PATH`. If it is missing, extraction records `OCR_UNAVAILABLE` and `REVIEW_REQUIRED`. The UI does not claim OCR succeeded.
 
 ### Why no LLM yet
 
@@ -495,8 +513,17 @@ pytest -q
 cd frontend && npm run lint && npm run typecheck && npm run build
 ```
 
-The default suite does not need a running Postgres. The optional Postgres check, after `alembic upgrade head` against PostgreSQL, is:
+The default suite does not need a running Postgres and does not call Gemini. Live provider tests stay opt-in (`pytest -m live_llm`, and the other `live_*` markers). Image OCR tests that need Tesseract skip or mark review-required when the binary is absent.
+
+The optional Postgres check, after `alembic upgrade head` against PostgreSQL, is:
 
 ```bash
 pytest -q -o addopts= -m postgres
 ```
+
+### Diagnose a failed extraction or reconciliation
+
+- Extraction: open the document, read stored outcome, validation issues, and evidence. `EXTRACTION_FAILED` can be retried. `VALIDATION_FAILED` and `REVIEW_REQUIRED` need a human correction, not guessed identifiers.
+- Reconciliation: run it from a promoted invoice. `MATCHED` is stored on that invoice. `EXCEPTIONS_FOUND` creates exception rows with evidence. PO and GRN rows do not inherit the last invoice's match status. A document with no persisted run is not matched.
+
+This is a single-operator portfolio demo. It is not multi-user production: there is no authentication, tenancy, worker queue, or cloud object store.

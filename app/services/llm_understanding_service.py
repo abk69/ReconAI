@@ -136,14 +136,14 @@ class LlmUnderstandingService:
                 gate_reasons=gate.reasons,
                 message="Gemini unavailable or failed; human review required.",
                 application_quality=ApplicationQuality.REVIEW_REQUIRED,
-                quality_reasons=[str(exc)],
+                quality_reasons=[exc.code],
                 error_code=exc.code,
-                error_message=str(exc),
+                error_message=exc.code,
             )
             self._ensure_review(
                 document,
                 m4,
-                reason=f"Gemini provider error ({exc.code}): {exc}",
+                reason=f"Gemini provider error ({exc.code}). Human review required.",
                 priority=ReviewPriority.HIGH,
             )
             document.status = DocumentStatus.REVIEW_REQUIRED.value

@@ -9,6 +9,7 @@ from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -168,6 +169,46 @@ def test_exact_duplicate_detection(doc_service: DocumentService, storage_root: P
     assert not dup1
     assert dup2
     assert first.id == second.id
+    assert len(list(storage_root.glob("*.pdf"))) == 1
+
+
+def test_concurrent_sha256_conflict_returns_duplicate(
+    doc_service: DocumentService,
+    db_session: Session,
+    storage_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A unique-index race must return the existing document, not a generic error."""
+    data = PDF_BYTES + b"-race"
+    first, dup1 = doc_service.upload(
+        filename="a.pdf",
+        content_type="application/pdf",
+        data=data,
+    )
+    assert dup1 is False
+
+    miss_lookup = {"value": True}
+    real_scalar = db_session.scalar
+
+    def scalar(stmt):  # type: ignore[no-untyped-def]
+        if miss_lookup["value"]:
+            miss_lookup["value"] = False
+            return None
+        return real_scalar(stmt)
+
+    def commit() -> None:
+        raise IntegrityError("INSERT INTO documents", {}, Exception("uq_documents_sha256"))
+
+    monkeypatch.setattr(db_session, "scalar", scalar)
+    monkeypatch.setattr(db_session, "commit", commit)
+
+    second, dup2 = doc_service.upload(
+        filename="b.pdf",
+        content_type="application/pdf",
+        data=data,
+    )
+    assert dup2 is True
+    assert second.id == first.id
     assert len(list(storage_root.glob("*.pdf"))) == 1
 
 

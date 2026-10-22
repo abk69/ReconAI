@@ -153,7 +153,7 @@ class PromotionService:
 
         vendor = self._resolve_vendor(document, candidate)
         order_date = _require_date(candidate, "order_date")
-        currency = str(candidate.get("currency") or "USD").upper()
+        currency = _optional_currency(candidate)
         lines = candidate.get("lines") or []
         if not lines:
             raise PromotionValidationError("Purchase order requires at least one line.")
@@ -239,7 +239,7 @@ class PromotionService:
 
         vendor = self._resolve_vendor(document, candidate)
         invoice_date = _require_date(candidate, "invoice_date")
-        currency = str(candidate.get("currency") or "USD").upper()
+        currency = _optional_currency(candidate)
         po: PurchaseOrder | None = None
         if candidate.get("po_number") or document.purchase_order_id is not None:
             po = self._resolve_po_optional(document, candidate)
@@ -340,8 +340,19 @@ class PromotionService:
         return None
 
 
+def _optional_currency(data: dict[str, Any]) -> str:
+    value = data.get("currency")
+    if isinstance(value, str):
+        value = normalize_business_value(value)
+    if not isinstance(value, str) or not value.strip():
+        return "USD"
+    return value.strip().upper()
+
+
 def _require_str(data: dict[str, Any], key: str) -> str:
     value = data.get(key)
+    if isinstance(value, str):
+        value = normalize_business_value(value)
     if not isinstance(value, str) or not value.strip():
         raise PromotionValidationError(f"Missing required field: {key}")
     return value.strip()

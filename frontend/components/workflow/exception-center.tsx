@@ -1,13 +1,21 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 
 import { EvidencePanel } from "@/components/procurement/evidence";
 import { RecordState } from "@/components/procurement/record-state";
-import { useResource } from "@/components/procurement/use-resource";
+import { resourceError, useResource } from "@/components/procurement/use-resource";
 import { EnumBadge } from "@/components/ui/enum-badge";
+import { ConfirmDialog } from "@/components/workflow/confirm-dialog";
 import { getException } from "@/lib/api/procurement";
-import { getResolutionPlan, listPolicyGrounding, listResolutionPlans } from "@/lib/api/workflow";
+import {
+  createResolutionPlan,
+  getResolutionPlan,
+  listPolicyGrounding,
+  listResolutionPlans,
+  requestPolicyExplanation,
+} from "@/lib/api/workflow";
 import { formatTimestamp, readableLabel } from "@/lib/labels";
 import type { PolicyCitation, ResolutionPlan } from "@/types/workflow";
 
@@ -127,14 +135,19 @@ function PlanSummary({ plan }: { plan: ResolutionPlan }) {
 }
 
 export function ExceptionCenterDetail({ id }: { id: string }) {
+  const [generation, setGeneration] = useState(0);
+  const [dialog, setDialog] = useState<"explain" | "plan" | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const exception = useResource(id, (signal) => getException(id, signal), "Exception");
   const grounding = useResource(
-    `${id}:grounding`,
+    `${id}:grounding:${generation}`,
     (signal) => listPolicyGrounding(id, signal),
     "Policy grounding",
   );
   const plans = useResource(
-    `${id}:plans`,
+    `${id}:plans:${generation}`,
     async (signal) => {
       const list = await listResolutionPlans(
         { reconciliation_exception_id: id, limit: 10 },
@@ -144,6 +157,22 @@ export function ExceptionCenterDetail({ id }: { id: string }) {
     },
     "Resolution plans",
   );
+
+  async function run(name: "explain" | "plan", work: () => Promise<string>) {
+    setBusy(true);
+    setNotice(null);
+    setActionError(null);
+    try {
+      const message = await work();
+      setNotice(message);
+      setDialog(null);
+      setGeneration((value) => value + 1);
+    } catch (error) {
+      setActionError(resourceError(error, name === "explain" ? "Policy explanation" : "Resolution plan"));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <div className="mx-auto max-w-4xl space-y-5">
@@ -262,6 +291,24 @@ export function ExceptionCenterDetail({ id }: { id: string }) {
                 AI-assisted policy explanation from stored results. It is not a policy decision and
                 not the reconciliation fact. Opening this page does not generate a new explanation.
               </p>
+              {notice ? (
+                <p className="mt-3 rounded-md border border-line bg-surface p-3 text-sm" role="status">
+                  {notice}
+                </p>
+              ) : null}
+              {actionError ? (
+                <p className="mt-3 rounded-md border border-danger bg-danger-soft p-3 text-sm" role="alert">
+                  {actionError}
+                </p>
+              ) : null}
+              <button
+                type="button"
+                className="mt-3 min-h-10 rounded-md border border-line px-3 py-2 text-sm"
+                disabled={busy}
+                onClick={() => setDialog("explain")}
+              >
+                Generate policy explanation
+              </button>
               {grounding.kind === "loading" ? <p className="mt-3 text-sm">Loading stored policy grounding.</p> : null}
               {grounding.kind === "error" ? (
                 <p className="mt-3 text-sm" role="alert">
@@ -346,9 +393,18 @@ export function ExceptionCenterDetail({ id }: { id: string }) {
               </p>
               <h2 className="mt-1 text-base font-semibold">Proposed resolution</h2>
               <p className="mt-2 text-sm leading-6 text-ink-muted">
-                Opening this page does not generate, approve, or execute a plan. Approval stays in
-                the resolution workflow.
+                Opening this page does not generate, approve, or execute a plan. Creating a plan is
+                an explicit action and still requires a person to approve it in the resolution
+                workflow. This may call Gemini.
               </p>
+              <button
+                type="button"
+                className="mt-3 min-h-10 rounded-md bg-brand px-3 py-2 text-sm text-on-brand disabled:opacity-60"
+                disabled={busy}
+                onClick={() => setDialog("plan")}
+              >
+                Create resolution plan
+              </button>
               {plans.kind === "loading" ? <p className="mt-3 text-sm">Loading resolution plans.</p> : null}
               {plans.kind === "error" ? (
                 <p className="mt-3 text-sm" role="alert">
@@ -357,7 +413,7 @@ export function ExceptionCenterDetail({ id }: { id: string }) {
               ) : null}
               {plans.kind === "ready" && plans.data.length === 0 ? (
                 <p className="mt-3 text-sm text-ink-muted">
-                  No resolution plan is stored for this exception. This page does not generate one.
+                  No resolution plan is stored for this exception.
                 </p>
               ) : null}
               {plans.kind === "ready"
@@ -369,6 +425,36 @@ export function ExceptionCenterDetail({ id }: { id: string }) {
                 </Link>
               </p>
             </section>
+            <ConfirmDialog
+              open={dialog === "explain"}
+              title="Generate a policy explanation?"
+              description="This asks the backend to retrieve stored policy chunks and persist an AI-assisted explanation. It does not change the reconciliation fact. Gemini is required."
+              confirmLabel="Generate explanation"
+              busy={busy}
+              onCancel={() => setDialog(null)}
+              onConfirm={() =>
+                void run("explain", async () => {
+                  const result = await requestPolicyExplanation(id);
+                  return `Backend stored policy explanation status ${result.status}.`;
+                })
+              }
+            />
+            <ConfirmDialog
+              open={dialog === "plan"}
+              title="Create a resolution plan?"
+              description="This asks the backend to propose workflow actions. It does not approve or execute them. Gemini is required."
+              confirmLabel="Create plan"
+              busy={busy}
+              onCancel={() => setDialog(null)}
+              onConfirm={() =>
+                void run("plan", async () => {
+                  const result = await createResolutionPlan(id);
+                  return result.reused_existing
+                    ? `Backend reused stored plan ${result.plan_id}. Status ${result.status}.`
+                    : `Backend stored plan ${result.plan_id}. Status ${result.status}.`;
+                })
+              }
+            />
           </>
         )}
       </RecordState>

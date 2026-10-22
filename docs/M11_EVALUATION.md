@@ -30,14 +30,14 @@ These are synthetic measurements, not real-world extraction accuracy.
 
 | Metric | Result |
 | --- | --- |
-| Header accuracy | 58 / 58 = 1.0000 |
-| Header completeness | 58 / 75 = 0.7733 |
+| Header accuracy | 69 / 69 = 1.0000 |
+| Header completeness | 69 / 75 = 0.9200 |
 | Line accuracy | 29 / 30 = 0.9667 |
 | Line completeness | 29 / 47 = 0.6170 |
-| Exact match | 12 / 20 = 0.6000 |
-| Document success | 12 / 20 = 0.6000 |
+| Exact match | 14 / 20 = 0.7000 |
+| Document success | 14 / 20 = 0.7000 |
 
-Error counts: EMPTY_EXTRACTION 1, EXTRA_LINE 3, LINE_FIELD_MISMATCH 1, MISSING_FIELD 17, MISSING_LINE 4.
+Error counts: EMPTY_EXTRACTION 1, EXTRA_LINE 3, LINE_FIELD_MISMATCH 1, MISSING_FIELD 6, MISSING_LINE 4.
 
 Offline M6 status is `NOT_RUN`.
 Live extraction scores one case via
@@ -193,6 +193,7 @@ The datasets are synthetic and small.
 Offline retrieval uses a fake embedding provider.
 Live LLM checks are bounded smoke tests.
 They depend on a local GEMINI_API_KEY and provider availability.
+Live Gemini tests may incur provider cost.
 There is no production traffic benchmark, no SLA,
 and no concurrency or load benchmark.
 Extraction completeness is lower than header accuracy on this dataset.

@@ -601,6 +601,7 @@ def render_markdown(report: dict[str, Any]) -> str:
         "Offline retrieval uses a fake embedding provider.",
         "Live LLM checks are bounded smoke tests.",
         "They depend on a local GEMINI_API_KEY and provider availability.",
+        "Live Gemini tests may incur provider cost.",
         "There is no production traffic benchmark, no SLA,",
         "and no concurrency or load benchmark.",
         "Extraction completeness is lower than header accuracy on this dataset.",

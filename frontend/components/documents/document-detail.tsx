@@ -1,16 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 
 import { DocumentActions } from "@/components/documents/document-actions";
 import { Lifecycle, buildLifecycle } from "@/components/documents/lifecycle";
 import { FlowRail } from "@/components/ui/flow-rail";
 import { RecordState } from "@/components/procurement/record-state";
-import { resourceError, useResource } from "@/components/procurement/use-resource";
+import { loadAside, resourceError, useResource } from "@/components/procurement/use-resource";
 import { DataTable } from "@/components/ui/data-table";
 import { getLlmUnderstanding, getRawExtraction, getUnderstanding, understandDocument } from "@/lib/api/documents";
-import { isApiError } from "@/lib/api/errors";
 import { getDocument, getInvoice, getVendor, listExceptions, listGoodsReceipts, listInvoices, listPurchaseOrders, runReconciliation, type ReconciliationRun } from "@/lib/api/procurement";
 import { listReviewTasks, requestReview } from "@/lib/api/workflow";
 import { invoiceStatusWords, relatedInvoiceSummary } from "@/lib/documents/next-action";
@@ -45,27 +44,6 @@ type Bundle = {
 
 function isScalar(value: unknown): value is string | number | boolean | null {
   return value === null || ["string", "number", "boolean"].includes(typeof value);
-}
-
-async function optional<T>(request: Promise<T>): Promise<T | null> {
-  try {
-    return await request;
-  } catch (error) {
-    if (isApiError(error) && error.status === 404) return null;
-    throw error;
-  }
-}
-
-async function aside<T>(
-  request: Promise<T>,
-  label: string,
-): Promise<{ value: T | null; error: string | null }> {
-  try {
-    return { value: await request, error: null };
-  } catch (error) {
-    if (isApiError(error) && error.status === 404) return { value: null, error: null };
-    return { value: null, error: resourceError(error, label) };
-  }
 }
 
 function Section({
@@ -262,17 +240,20 @@ function RawExtraction({ documentId }: { documentId: string }) {
 export function DocumentIntelligencePage({ id }: { id: string }) {
   const [revision, setRevision] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
+  const busyRef = useRef(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [run, setRun] = useState<ReconciliationRun | null>(null);
   const state = useResource(
     `${id}:${revision}`,
     async (signal) => {
       const document = await getDocument(id, signal);
-      const [understandingResult, llmResult, reviews, vendor] = await Promise.all([
-        aside(getUnderstanding(id, signal), "Deterministic extraction"),
-        aside(getLlmUnderstanding(id, signal), "AI-assisted extraction"),
-        listReviewTasks({ document_id: id, limit: 5 }, signal),
-        document.vendor_id ? optional(getVendor(document.vendor_id, signal)) : Promise.resolve(null),
+      const [understandingResult, llmResult, reviewsResult, vendorResult] = await Promise.all([
+        loadAside(getUnderstanding(id, signal), "Deterministic extraction"),
+        loadAside(getLlmUnderstanding(id, signal), "AI-assisted extraction"),
+        loadAside(listReviewTasks({ document_id: id, limit: 5 }, signal), "Review tasks"),
+        document.vendor_id
+          ? loadAside(getVendor(document.vendor_id, signal), "Vendor")
+          : Promise.resolve({ value: null, error: null }),
       ]);
       const understanding = understandingResult.value;
       const llm = llmResult.value;
@@ -283,23 +264,32 @@ export function DocumentIntelligencePage({ id }: { id: string }) {
           : document.goods_receipt_id
             ? { goods_receipt_id: document.goods_receipt_id }
             : null;
-      const exceptions = linkedId ? await listExceptions({ ...linkedId, limit: 10 }, signal) : null;
+      const exceptionsResult = linkedId
+        ? await loadAside(listExceptions({ ...linkedId, limit: 10 }, signal), "Exceptions")
+        : { value: null, error: null };
       const candidate = understanding?.candidate ?? null;
       const poNumber = typeof candidate?.po_number === "string" ? candidate.po_number.trim() : "";
       let purchaseOrderReady = Boolean(document.purchase_order_id);
       let goodsReceiptReady = Boolean(document.goods_receipt_id);
       let purchaseOrderId = document.purchase_order_id;
       if (poNumber) {
-        const orders = await listPurchaseOrders({ q: poNumber, limit: 20 }, signal);
-        const match = orders.items.find((item) => item.po_number === poNumber);
+        const ordersResult = await loadAside(
+          listPurchaseOrders({ q: poNumber, limit: 20 }, signal),
+          "Purchase orders",
+        );
+        const match = ordersResult.value?.items.find((item) => item.po_number === poNumber);
         if (match) {
           purchaseOrderReady = true;
           purchaseOrderId = match.id;
         }
       }
       if (purchaseOrderId && !goodsReceiptReady) {
-        const receipts = await listGoodsReceipts({ purchase_order_id: purchaseOrderId, limit: 1 }, signal);
-        goodsReceiptReady = receipts.total > 0 || receipts.items.length > 0;
+        const receiptsResult = await loadAside(
+          listGoodsReceipts({ purchase_order_id: purchaseOrderId, limit: 1 }, signal),
+          "Goods receipts",
+        );
+        const receipts = receiptsResult.value;
+        goodsReceiptReady = Boolean(receipts && (receipts.total > 0 || receipts.items.length > 0));
       }
       let invoiceReady = Boolean(document.invoice_id);
       let invoiceNumber: string | null = null;
@@ -307,15 +297,21 @@ export function DocumentIntelligencePage({ id }: { id: string }) {
       let relatedInvoices: InvoiceListItem[] = [];
       const recordType = understanding?.detected_type || document.document_type;
       if (document.invoice_id) {
-        const invoice = await getInvoice(document.invoice_id, signal);
-        invoiceReady = true;
-        invoiceNumber = invoice.invoice_number;
-        if (invoice.status === "MATCHED" || invoice.status === "EXCEPTION") {
-          reconciliationStatus = invoice.status;
+        const invoiceResult = await loadAside(getInvoice(document.invoice_id, signal), "Invoice");
+        const invoice = invoiceResult.value;
+        if (invoice) {
+          invoiceReady = true;
+          invoiceNumber = invoice.invoice_number;
+          if (invoice.status === "MATCHED" || invoice.status === "EXCEPTION") {
+            reconciliationStatus = invoice.status;
+          }
         }
       } else if (purchaseOrderId && (recordType === "PO" || recordType === "GRN")) {
-        const invoices = await listInvoices({ purchase_order_id: purchaseOrderId, limit: 50 }, signal);
-        relatedInvoices = [...invoices.items].sort((left, right) =>
+        const invoicesResult = await loadAside(
+          listInvoices({ purchase_order_id: purchaseOrderId, limit: 50 }, signal),
+          "Invoices",
+        );
+        relatedInvoices = [...(invoicesResult.value?.items ?? [])].sort((left, right) =>
           left.invoice_number.localeCompare(right.invoice_number),
         );
         invoiceReady = relatedInvoices.length > 0;
@@ -326,9 +322,9 @@ export function DocumentIntelligencePage({ id }: { id: string }) {
         understandingError: understandingResult.error,
         llm,
         llmError: llmResult.error,
-        review: reviews.items[0] ?? null,
-        vendor,
-        exceptions,
+        review: reviewsResult.value?.items[0] ?? null,
+        vendor: vendorResult.value,
+        exceptions: exceptionsResult.value,
         purchaseOrderReady,
         goodsReceiptReady,
         invoiceReady,
@@ -346,11 +342,12 @@ export function DocumentIntelligencePage({ id }: { id: string }) {
       <RecordState state={state} loadingTitle="Loading document" empty={null}>
         {(bundle) => {
           const { document, understanding, understandingError, llm, llmError, review, vendor, exceptions, purchaseOrderReady, goodsReceiptReady, invoiceReady, invoiceNumber, reconciliationStatus, relatedInvoices, relatedInvoiceSummary: invoiceSummary } = bundle;
-          async function runAction(name: string, work: () => Promise<unknown>, keepRun = false) {
-            if (busy) return;
+          async function runAction(name: string, work: () => Promise<unknown>) {
+            if (busyRef.current) return;
+            busyRef.current = true;
             setBusy(name);
             setActionError(null);
-            if (!keepRun) setRun(null);
+            setRun(null);
             try {
               await work();
               setRevision((value) => value + 1);
@@ -359,9 +356,11 @@ export function DocumentIntelligencePage({ id }: { id: string }) {
                 name === "understand" ? "Understanding" : name === "review" ? "Review request" : "Reconciliation";
               setActionError(resourceError(error, label));
             } finally {
+              busyRef.current = false;
               setBusy(null);
             }
           }
+          const exceptionHref = exceptions?.items[0] ? `/exceptions/${exceptions.items[0].id}` : null;
           const steps = buildLifecycle(document, understanding, review);
           const validationIssues =
             understanding?.outcome === "VALIDATION_FAILED" || understanding?.outcome === "REVIEW_REQUIRED"
@@ -394,19 +393,16 @@ export function DocumentIntelligencePage({ id }: { id: string }) {
                 reconciliationStatus={reconciliationStatus}
                 relatedInvoiceSummary={invoiceSummary}
                 ambiguitySummary={ambiguitySummary || null}
+                exceptionHref={exceptionHref}
                 onUnderstand={() => runAction("understand", () => understandDocument(document.id))}
                 onRequestReview={() => runAction("review", () => requestReview(document.id))}
                 onReconcile={() =>
-                  runAction(
-                    "reconcile",
-                    async () => {
-                      const result = await runReconciliation({
-                        invoice_id: document.invoice_id ?? undefined,
-                      });
-                      setRun(result);
-                    },
-                    true,
-                  )
+                  runAction("reconcile", async () => {
+                    const result = await runReconciliation({
+                      invoice_id: document.invoice_id ?? undefined,
+                    });
+                    setRun(result);
+                  })
                 }
               />
 
@@ -599,7 +595,14 @@ export function DocumentIntelligencePage({ id }: { id: string }) {
                       </div>
                     ) : <p>No quality-gate reasons were stored.</p>}
                     {llm.message ? <p>{llm.message}</p> : null}
-                    {llm.error_message ? <p>Stored error: {llm.error_code ?? "error"}. {llm.error_message}</p> : null}
+                    {llm.error_code ? (
+                      <p>
+                        Stored error: {llm.error_code}
+                        {llm.error_message && llm.error_message !== llm.error_code
+                          ? `. ${llm.error_message}`
+                          : ""}
+                      </p>
+                    ) : null}
                     <p>Stored {formatTimestamp(llm.created_at)}</p>
                     {llm.usage ? (
                       <p>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export function FilterBar({
   fields,
@@ -10,6 +10,7 @@ export function FilterBar({
 }) {
   const params = useSearchParams();
   const router = useRouter();
+  const appliedKey = fields.map((field) => `${field.name}:${params.get(field.name) ?? ""}`).join("|");
   const [draft, setDraft] = useState<Record<string, string>>(() => {
     const initial: Record<string, string> = {};
     for (const field of fields) {
@@ -17,6 +18,20 @@ export function FilterBar({
     }
     return initial;
   });
+
+  useEffect(() => {
+    const next: Record<string, string> = {};
+    if (!appliedKey) {
+      setDraft(next);
+      return;
+    }
+    for (const pair of appliedKey.split("|")) {
+      const index = pair.indexOf(":");
+      if (index === -1) continue;
+      next[pair.slice(0, index)] = pair.slice(index + 1);
+    }
+    setDraft(next);
+  }, [appliedKey]);
 
   return (
     <form

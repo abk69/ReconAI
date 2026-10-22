@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.core.safe_text import sanitize_public_message
 from app.db.models import Document, DocumentExtractionResult
 from app.domain.enums import DocumentStatus, DocumentType, ExtractionOutcome
 from app.extraction.base import EXTRACTOR_VERSION, select_extractor
@@ -85,11 +86,13 @@ class DocumentUnderstandingService:
                 document,
                 detected_type=DocumentType.UNKNOWN,
                 outcome=ExtractionOutcome.EXTRACTION_FAILED,
-                message=str(exc),
+                message=sanitize_public_message(
+                    str(exc), fallback="The stored file could not be read."
+                ),
                 validation=ValidationResult(is_valid=False, issues=[]),
                 evidence=[],
                 candidate=None,
-                raw={"error": str(exc)},
+                raw={"error": "storage_error"},
             )
 
         try:
@@ -99,11 +102,13 @@ class DocumentUnderstandingService:
                 document,
                 detected_type=DocumentType.UNKNOWN,
                 outcome=ExtractionOutcome.EXTRACTION_FAILED,
-                message=str(exc),
+                message=sanitize_public_message(
+                    str(exc), fallback="This file type is not supported for extraction."
+                ),
                 validation=ValidationResult(is_valid=False, issues=[]),
                 evidence=[],
                 candidate=None,
-                raw={"error": str(exc)},
+                raw={"error": "unsupported_format"},
             )
 
         try:
@@ -118,11 +123,14 @@ class DocumentUnderstandingService:
                 document,
                 detected_type=DocumentType.UNKNOWN,
                 outcome=ExtractionOutcome.EXTRACTION_FAILED,
-                message=f"Extractor failed: {exc}",
+                message=sanitize_public_message(
+                    f"Extractor failed: {exc}",
+                    fallback="Extraction failed. Retry understanding after checking the file.",
+                ),
                 validation=ValidationResult(is_valid=False, issues=[]),
                 evidence=[],
                 candidate=None,
-                raw={"error": str(exc)},
+                raw={"error": "extractor_failed"},
             )
 
         document.status = DocumentStatus.EXTRACTED.value

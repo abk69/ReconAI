@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 
 import { StatusBadge } from "@/components/ui/status-badge";
+import { ConfirmDialog } from "@/components/workflow/confirm-dialog";
 import type { ReconciliationRun } from "@/lib/api/procurement";
 import { documentArticle, documentGuidance, documentKind, documentSetTags } from "@/lib/documents/next-action";
 import type { UnderstandingResult } from "@/types/documents";
@@ -23,6 +25,7 @@ export function DocumentActions({
   reconciliationStatus,
   relatedInvoiceSummary = null,
   ambiguitySummary = null,
+  exceptionHref = null,
   onUnderstand,
   onRequestReview,
   onReconcile,
@@ -40,10 +43,12 @@ export function DocumentActions({
   reconciliationStatus: string | null;
   relatedInvoiceSummary?: string | null;
   ambiguitySummary?: string | null;
+  exceptionHref?: string | null;
   onUnderstand: () => void;
   onRequestReview: () => void;
   onReconcile: () => void;
 }) {
+  const [confirmReconcile, setConfirmReconcile] = useState(false);
   const candidate = understanding?.candidate ?? null;
   const poNumber = typeof candidate?.po_number === "string" ? candidate.po_number : null;
   const guidance = documentGuidance({
@@ -117,20 +122,29 @@ export function DocumentActions({
           </button>
         ) : null}
         {review && (step === "Review extraction" || step === "Promote extraction") ? (
-          <Link
-            className="inline-flex min-h-10 items-center rounded-md bg-brand px-3 py-2 text-sm text-on-brand"
-            href={`/review/${review.id}`}
-            aria-disabled={disabled}
-          >
-            {step}
-          </Link>
+          disabled ? (
+            <button
+              type="button"
+              className="inline-flex min-h-10 items-center rounded-md bg-brand px-3 py-2 text-sm text-on-brand disabled:opacity-60"
+              disabled
+            >
+              {step}
+            </button>
+          ) : (
+            <Link
+              className="inline-flex min-h-10 items-center rounded-md bg-brand px-3 py-2 text-sm text-on-brand"
+              href={`/review/${review.id}`}
+            >
+              {step}
+            </Link>
+          )
         ) : null}
         {step === "Run reconciliation" ? (
           <button
             type="button"
             className="min-h-10 rounded-md bg-brand px-3 py-2 text-sm text-on-brand disabled:opacity-60"
             disabled={disabled}
-            onClick={onReconcile}
+            onClick={() => setConfirmReconcile(true)}
           >
             {busy === "reconcile" ? "Running reconciliation." : "Run reconciliation"}
           </button>
@@ -145,7 +159,10 @@ export function DocumentActions({
           </button>
         ) : null}
         {step === "See the problem" ? (
-          <Link className="inline-flex min-h-10 items-center text-sm text-brand underline" href="/reconciliation">
+          <Link
+            className="inline-flex min-h-10 items-center text-sm text-brand underline"
+            href={exceptionHref ?? "/exceptions"}
+          >
             See the problem
           </Link>
         ) : null}
@@ -165,8 +182,10 @@ export function DocumentActions({
       ) : null}
       {run && !matched ? (
         <div className="mt-4 space-y-2 text-sm leading-6">
-          {run.status === "MATCHED" || run.exceptions.length === 0 ? (
+          {run.status === "MATCHED" ? (
             <p>Matched.</p>
+          ) : run.exceptions.length === 0 ? (
+            <p>Reconciliation status {run.status}. No exception rows were returned.</p>
           ) : (
             <ul className="space-y-2">
               {run.exceptions.map((item) => (
@@ -176,6 +195,18 @@ export function DocumentActions({
           )}
         </div>
       ) : null}
+      <ConfirmDialog
+        open={confirmReconcile}
+        title="Run reconciliation?"
+        description="This persists the match result and any exceptions for this invoice. It does not invent missing documents."
+        confirmLabel="Run reconciliation"
+        busy={busy === "reconcile"}
+        onCancel={() => setConfirmReconcile(false)}
+        onConfirm={() => {
+          setConfirmReconcile(false);
+          onReconcile();
+        }}
+      />
     </section>
   );
 }

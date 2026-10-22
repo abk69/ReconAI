@@ -95,7 +95,8 @@ export function safeDetail(value: string): string | null {
   if (/traceback|exception|sqlalchemy|password|secret|api[_-]?key|bearer\s+/i.test(trimmed)) {
     return null;
   }
-  if (/[<>]/.test(trimmed) || /file "\//i.test(trimmed)) return null;
+  if (/[<>]/.test(trimmed) || /file ["']?[\\/]/i.test(trimmed)) return null;
+  if (/(?:[A-Za-z]:)?(?:[\\/][^\s'"`]+)+/.test(trimmed)) return null;
   if (/^request failed \(\d+\)$/i.test(trimmed)) return null;
   return trimmed;
 }

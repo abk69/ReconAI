@@ -37,6 +37,8 @@ const STATUS_TONE: Record<string, SignalTone> = {
   RECEIVED: "info",
   MATCHED: "success",
   EXCEPTION: "danger",
+  EXCEPTIONS_FOUND: "danger",
+  INCOMPLETE: "warning",
   PARTIALLY_RECEIVED: "warning",
   EXTRACTION_FAILED: "danger",
   VALIDATION_FAILED: "danger",
@@ -57,10 +59,10 @@ const STATUS_TONE: Record<string, SignalTone> = {
 export function EnumBadge({ value, kind }: { value: string; kind: "severity" | "status" }) {
   const tone =
     kind === "severity" ? (SEVERITY_TONE[value] ?? "neutral") : (STATUS_TONE[value] ?? "neutral");
+  const label = readableLabel(value);
   return (
-    <span className="inline-flex items-center" title={readableLabel(value)}>
-      <StatusBadge label={value} tone={tone} />
-      <span className="sr-only">{readableLabel(value)}</span>
+    <span className="inline-flex items-center" title={value === label ? undefined : value}>
+      <StatusBadge label={label} tone={tone} />
     </span>
   );
 }

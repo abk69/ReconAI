@@ -22,7 +22,14 @@ export function ConfirmDialog({
   children?: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const submitting = useRef(false);
   const titleId = useId();
+
+  useEffect(() => {
+    if (!busy) {
+      submitting.current = false;
+    }
+  }, [busy]);
 
   useEffect(() => {
     const dialog = ref.current;
@@ -70,7 +77,13 @@ export function ConfirmDialog({
           type="button"
           className="min-h-10 rounded-lg bg-brand px-3 py-2 text-sm text-on-brand disabled:opacity-60"
           disabled={busy}
-          onClick={onConfirm}
+          onClick={() => {
+            if (busy || submitting.current) {
+              return;
+            }
+            submitting.current = true;
+            onConfirm();
+          }}
         >
           {busy ? "Saving" : confirmLabel}
         </button>

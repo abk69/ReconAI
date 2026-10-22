@@ -163,8 +163,15 @@ export function documentGuidance(row: DocumentStepInput): DocumentGuidance {
         action: "Review extraction",
       };
     }
+    if (row.review_status === "REJECTED") {
+      return {
+        sentence:
+          "This extraction failed its checks and the review was rejected. Retry understanding if the file can be read again.",
+        action: "Retry understanding",
+      };
+    }
     return {
-      sentence: "This extraction failed its checks and the review is already closed, so it cannot be saved.",
+      sentence: "This extraction failed its checks. Correct the stored fields before it can be saved.",
       action: "Review extraction",
     };
   }

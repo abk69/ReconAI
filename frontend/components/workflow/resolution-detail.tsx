@@ -96,7 +96,7 @@ export function ResolutionDetail({ id }: { id: string }) {
         );
       } else {
         const result = await executeProposedAction(id, action.id, idempotencyKey);
-        const failure = result.error_message ? ` ${result.error_message}` : "";
+        const failure = result.error_message ? ` ${result.error_code ?? result.execution_status}` : "";
         setNotice(
           `Backend recorded execution ${result.execution_status} for ${result.action_type}. Action status is ${result.action_status}.${failure}`,
         );
@@ -296,10 +296,9 @@ export function ResolutionDetail({ id }: { id: string }) {
                             <dd>{row.completed_at ? formatTimestamp(row.completed_at) : "Not completed"}</dd>
                           </div>
                         </dl>
-                        {row.error_message ? (
+                        {row.error_code || row.error_message ? (
                           <p className="mt-2" role="alert">
-                            Execution failed: {row.error_code ? `${row.error_code}. ` : ""}
-                            {row.error_message}
+                            Execution failed{row.error_code ? `: ${row.error_code}` : "."}
                           </p>
                         ) : null}
                         <h3 className="mt-2 text-sm font-semibold">Result</h3>

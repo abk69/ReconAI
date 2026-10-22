@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { explainApiError } from "@/lib/api/errors";
+import { explainApiError, isApiError } from "@/lib/api/errors";
 
 export type ResourceState<T> =
   | { kind: "loading" }
@@ -11,6 +11,18 @@ export type ResourceState<T> =
 
 export function resourceError(error: unknown, label: string): string {
   return explainApiError(error, label);
+}
+
+export async function loadAside<T>(
+  request: Promise<T>,
+  label: string,
+): Promise<{ value: T | null; error: string | null }> {
+  try {
+    return { value: await request, error: null };
+  } catch (error) {
+    if (isApiError(error) && error.status === 404) return { value: null, error: null };
+    return { value: null, error: resourceError(error, label) };
+  }
 }
 
 export function useResource<T>(

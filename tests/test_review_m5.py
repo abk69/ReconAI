@@ -455,8 +455,9 @@ def test_missing_required_fields_cannot_promote(db_session: Session) -> None:
         document_id=document.id,
         extraction_result_id=extraction.id,
     )
-    reviews.approve(task.id)
-    with pytest.raises(PromotionValidationError):
+    with pytest.raises(ReviewValidationError):
+        reviews.approve(task.id)
+    with pytest.raises(PromotionNotAllowedError):
         PromotionService(db_session).promote(task.id)
 
 
@@ -465,7 +466,7 @@ def test_promotion_transaction_rollback(db_session: Session) -> None:
         db_session,
         candidate={
             "invoice_number": "INV-ROLL",
-            "invoice_date": "not-a-date",
+            "invoice_date": "2026-09-15",
             "vendor_name": "Acme",
             "lines": [{"line_number": 1, "quantity": "1", "unit_price": "1"}],
         },
@@ -476,6 +477,13 @@ def test_promotion_transaction_rollback(db_session: Session) -> None:
         extraction_result_id=extraction.id,
     )
     reviews.approve(task.id)
+    task.reviewed_candidate = {
+        "invoice_number": "INV-ROLL",
+        "invoice_date": "not-a-date",
+        "vendor_name": "Acme",
+        "lines": [{"line_number": 1, "quantity": "1", "unit_price": "1"}],
+    }
+    db_session.commit()
     with pytest.raises(PromotionValidationError):
         PromotionService(db_session).promote(task.id)
     assert db_session.scalar(select(Invoice).where(Invoice.invoice_number == "INV-ROLL")) is None

@@ -22,6 +22,22 @@ export function listPolicyGrounding(
   return apiRequest(`/reconciliation/exceptions/${exceptionId}/policy-grounding`, { signal });
 }
 
+export function requestPolicyExplanation(exceptionId: string): Promise<{ status: string }> {
+  return apiRequest(`/reconciliation/exceptions/${exceptionId}/policy-explanation`, {
+    method: "POST",
+    body: { persist: true },
+  });
+}
+
+export function createResolutionPlan(
+  exceptionId: string,
+): Promise<{ plan_id: string; status: string; reused_existing: boolean }> {
+  return apiRequest(`/reconciliation/exceptions/${exceptionId}/resolution-plan`, {
+    method: "POST",
+    body: {},
+  });
+}
+
 export function requestReview(documentId: string): Promise<ReviewTask> {
   return apiRequest("/review/tasks", {
     method: "POST",

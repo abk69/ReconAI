@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 
 import { EvidencePanel } from "@/components/procurement/evidence";
 import { RecordState } from "@/components/procurement/record-state";
-import { useResource } from "@/components/procurement/use-resource";
+import { loadAside, useResource } from "@/components/procurement/use-resource";
 import { DataTable } from "@/components/ui/data-table";
 import { EnumBadge } from "@/components/ui/enum-badge";
 import {
@@ -44,12 +44,12 @@ export function PurchaseOrderDetailPage({ id }: { id: string }) {
     async (signal) => {
       const po = await getPurchaseOrder(id, signal);
       const [vendor, grns, invoices, exceptions] = await Promise.all([
-        getVendor(po.vendor_id, signal),
-        listGoodsReceipts({ purchase_order_id: id, limit: 25 }, signal),
-        listInvoices({ purchase_order_id: id, limit: 25 }, signal),
-        listExceptions({ purchase_order_id: id, limit: 25 }, signal),
+        loadAside(getVendor(po.vendor_id, signal), "Vendor"),
+        loadAside(listGoodsReceipts({ purchase_order_id: id, limit: 25 }, signal), "Goods receipts"),
+        loadAside(listInvoices({ purchase_order_id: id, limit: 25 }, signal), "Invoices"),
+        loadAside(listExceptions({ purchase_order_id: id, limit: 25 }, signal), "Exceptions"),
       ]);
-      return { po, vendor, grns, invoices, exceptions };
+      return { po, vendor: vendor.value, grns: grns.value, invoices: invoices.value, exceptions: exceptions.value };
     },
     "Purchase order",
   );
@@ -65,7 +65,7 @@ export function PurchaseOrderDetailPage({ id }: { id: string }) {
               </div>
             </div>
             <dl className="grid gap-4 rounded-md border border-line bg-surface p-5 sm:grid-cols-2">
-              <Meta label="Vendor" value={vendor.name} />
+              <Meta label="Vendor" value={vendor?.name ?? "Vendor was not loaded"} />
               <Meta label="Order date" value={po.order_date} />
               <Meta label="Currency" value={po.currency} />
               <Meta label="Created" value={formatTimestamp(po.created_at)} />
@@ -87,7 +87,7 @@ export function PurchaseOrderDetailPage({ id }: { id: string }) {
               />
             </section>
             <Related title="Goods receipts">
-              {grns.items.length === 0 ? "No goods receipts reference this purchase order." : (
+              {!grns || grns.items.length === 0 ? "No goods receipts reference this purchase order." : (
                 <ul className="space-y-1">
                   {grns.items.map((grn) => (
                     <li key={grn.id}>
@@ -98,7 +98,7 @@ export function PurchaseOrderDetailPage({ id }: { id: string }) {
               )}
             </Related>
             <Related title="Invoices">
-              {invoices.items.length === 0 ? "No invoices reference this purchase order." : (
+              {!invoices || invoices.items.length === 0 ? "No invoices reference this purchase order." : (
                 <ul className="space-y-1">
                   {invoices.items.map((invoice) => (
                     <li key={invoice.id}>
@@ -109,7 +109,7 @@ export function PurchaseOrderDetailPage({ id }: { id: string }) {
               )}
             </Related>
             <Related title="Reconciliation exceptions">
-              {exceptions.items.length === 0 ? "No persisted exceptions reference this purchase order." : (
+              {!exceptions || exceptions.items.length === 0 ? "No persisted exceptions reference this purchase order." : (
                 <ul className="space-y-1">
                   {exceptions.items.map((item) => (
                     <li key={item.id}>
@@ -169,10 +169,10 @@ export function InvoiceDetailPage({ id }: { id: string }) {
     async (signal) => {
       const invoice = await getInvoice(id, signal);
       const [vendor, exceptions] = await Promise.all([
-        getVendor(invoice.vendor_id, signal),
-        listExceptions({ invoice_id: id, limit: 25 }, signal),
+        loadAside(getVendor(invoice.vendor_id, signal), "Vendor"),
+        loadAside(listExceptions({ invoice_id: id, limit: 25 }, signal), "Exceptions"),
       ]);
-      return { invoice, vendor, exceptions };
+      return { invoice, vendor: vendor.value, exceptions: exceptions.value };
     },
     "Invoice",
   );
@@ -189,7 +189,7 @@ export function InvoiceDetailPage({ id }: { id: string }) {
               </p>
             </div>
             <dl className="grid gap-4 rounded-md border border-line bg-surface p-5 sm:grid-cols-2">
-              <Meta label="Vendor" value={vendor.name} />
+              <Meta label="Vendor" value={vendor?.name ?? "Vendor was not loaded"} />
               <Meta label="Invoice date" value={invoice.invoice_date} />
               <Meta label="Subtotal" value={`${invoice.subtotal} ${invoice.currency}`} />
               <Meta label="Tax amount" value={`${invoice.tax_amount} ${invoice.currency}`} />
@@ -217,7 +217,7 @@ export function InvoiceDetailPage({ id }: { id: string }) {
               ]}
             />
             <Related title="Reconciliation exceptions">
-              {exceptions.items.length === 0 ? "No persisted exceptions reference this invoice." : (
+              {!exceptions || exceptions.items.length === 0 ? "No persisted exceptions reference this invoice." : (
                 <ul className="space-y-1">
                   {exceptions.items.map((item) => (
                     <li key={item.id}>

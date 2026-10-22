@@ -39,6 +39,13 @@ const LABELS: Record<string, string> = {
   VENDOR: "Vendor",
   INVOICE: "Invoice",
   PURCHASE_ORDER: "Purchase order",
+  MATCHED: "Matched",
+  EXCEPTION: "Exception",
+  EXCEPTIONS_FOUND: "Exceptions found",
+  INCOMPLETE: "Incomplete",
+  PROMOTED: "Promoted",
+  GRN: "Goods receipt",
+  PO: "Purchase order",
 };
 
 /** Readable label. The original backend value is still shown beside it. */
