@@ -1,6 +1,6 @@
 [project]
 name = "reconai"
-version = "1.0.2"
+version = "1.5.0"
 description = "Intelligent procurement reconciliation and exception-resolution platform"
 readme = "README.md"
 requires-python = ">=3.11"

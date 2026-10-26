@@ -31,15 +31,32 @@ export async function uploadDocument(file: File, signal?: AbortSignal): Promise<
   };
 }
 
+export type ProcessingJob = {
+  id: string;
+  job_type: string;
+  status: string;
+  resource_id: string;
+  attempt_count: number;
+  error_message: string | null;
+  reused_existing: boolean;
+};
+
 export function understandDocument(
   documentId: string,
   signal?: AbortSignal,
-): Promise<UnderstandingResult> {
+): Promise<ProcessingJob> {
   return apiRequest(`/documents/${documentId}/understand`, {
     method: "POST",
     signal,
-    timeoutMs: 120_000,
   });
+}
+
+export function getProcessingJob(jobId: string, signal?: AbortSignal): Promise<ProcessingJob> {
+  return apiRequest(`/jobs/${jobId}`, { signal });
+}
+
+export function retryProcessingJob(jobId: string): Promise<ProcessingJob> {
+  return apiRequest(`/jobs/${jobId}/retry`, { method: "POST" });
 }
 
 export function getUnderstanding(

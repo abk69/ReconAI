@@ -9,18 +9,21 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.db.models import GoodsReceipt, Invoice, PurchaseOrder
+from app.db.models import DocumentExtractionResult, GoodsReceipt, Invoice, PurchaseOrder
 from app.domain.enums import (
     DocumentStatus,
     DocumentType,
     ExceptionType,
     ExtractionOutcome,
     InvoiceStatus,
+    JobStatus,
+    JobType,
     ReconciliationStatus,
     ReviewStatus,
 )
 from app.services.document_service import DocumentService
 from app.services.document_understanding_service import DocumentUnderstandingService
+from app.services.job_service import JobService
 from app.services.promotion_service import (
     PromotionNotAllowedError,
     PromotionService,
@@ -29,6 +32,7 @@ from app.services.promotion_service import (
 from app.services.reconciliation_service import ReconciliationService
 from app.services.review_service import ReviewService, ReviewValidationError
 from app.storage.local import LocalFileStorage
+from app.workers.runner import run_available
 
 _LINES = (
     "SKU / ITEM\n"
@@ -271,6 +275,67 @@ def test_clean_stacked_invoice_po_and_grn_match(workflow, db_session: Session) -
     db_session.refresh(saved_invoice)
     assert saved_invoice.status == InvoiceStatus.MATCHED.value
     assert invoice_task.promoted_entity_id == invoice_row.invoice_id
+
+
+def test_queued_understanding_reaches_review_promotion_and_reconciliation(
+    workflow, db_session: Session
+) -> None:
+    docs, _understanding, reviews, promotion = workflow
+
+    def queued(filename: str, text: str):
+        row, duplicate = docs.upload(
+            filename=filename,
+            content_type="application/pdf",
+            data=_make_pdf(text),
+        )
+        assert duplicate is False
+        job, reused = JobService(db_session).enqueue(
+            job_type=JobType.DOCUMENT_UNDERSTAND,
+            resource_type="document",
+            resource_id=row.id,
+        )
+        assert reused is False
+        assert run_available(db_session, worker_id="workflow") == 1
+        db_session.refresh(job)
+        assert job.status == JobStatus.SUCCEEDED.value
+        extraction = db_session.scalar(
+            select(DocumentExtractionResult).where(DocumentExtractionResult.document_id == row.id)
+        )
+        assert extraction is not None
+        assert extraction.outcome == ExtractionOutcome.READY_FOR_RECONCILIATION.value
+        return row
+
+    po_row = queued("02_purchase_order.pdf", _purchase_order())
+    grn_row = queued("03_goods_receipt.pdf", _goods_receipt())
+    invoice_row = queued("01_clean_invoice.pdf", _invoice("INV-1001"))
+    _approve_and_promote(po_row.id, reviews, promotion, db_session)
+    _approve_and_promote(grn_row.id, reviews, promotion, db_session)
+    invoice_task = _approve_and_promote(invoice_row.id, reviews, promotion, db_session)
+    assert db_session.scalar(select(func.count()).select_from(Invoice)) == 1
+    db_session.refresh(invoice_row)
+    matched = ReconciliationService(db_session).run(invoice_id=invoice_row.invoice_id, persist=True)
+    assert matched.status is ReconciliationStatus.MATCHED
+    assert matched.exceptions == []
+    assert invoice_task.promoted_entity_id == invoice_row.invoice_id
+
+    price_row = queued(
+        "04_price_mismatch_invoice.pdf",
+        _invoice("INV-1002", price="13.50", amount="135.00", total="175.00"),
+    )
+    _approve_and_promote(price_row.id, reviews, promotion, db_session)
+    db_session.refresh(price_row)
+    price_run = ReconciliationService(db_session).run(invoice_id=price_row.invoice_id, persist=True)
+    assert ExceptionType.PRICE_MISMATCH in {item.exception_type for item in price_run.exceptions}
+
+    qty_row = queued(
+        "05_quantity_mismatch_invoice.pdf",
+        _invoice("INV-1003", qty="12", amount="144.00", total="184.00"),
+    )
+    _approve_and_promote(qty_row.id, reviews, promotion, db_session)
+    db_session.refresh(qty_row)
+    qty_run = ReconciliationService(db_session).run(invoice_id=qty_row.invoice_id, persist=True)
+    assert ExceptionType.QUANTITY_MISMATCH in {item.exception_type for item in qty_run.exceptions}
+    assert db_session.scalar(select(func.count()).select_from(Invoice)) == 3
 
 
 def test_price_and_quantity_mismatches_still_exception(workflow, db_session: Session) -> None:

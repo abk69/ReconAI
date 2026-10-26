@@ -32,6 +32,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
 from app.db.base import Base
+from app.db.mixins import TenantScoped
+from app.db.tenant_filter import install_tenant_filter
 from app.domain.enums import (
     ActionType,
     ApprovalDecision,
@@ -69,15 +71,18 @@ Quantity = Numeric(18, 4)
 TaxRate = Numeric(8, 4)
 
 
-class Vendor(Base):
+class Vendor(TenantScoped, Base):
     """Supplier / vendor master record."""
 
     __tablename__ = "vendors"
-    __table_args__ = (Index("ix_vendors_tax_id", "tax_id"),)
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "tax_id", name="uq_vendors_tenant_tax_id"),
+        Index("ix_vendors_tax_id", "tax_id"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    tax_id: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
+    tax_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -94,12 +99,12 @@ class Vendor(Base):
     invoices: Mapped[list[Invoice]] = relationship(back_populates="vendor")
 
 
-class PurchaseOrder(Base):
+class PurchaseOrder(TenantScoped, Base):
     """Purchase order header."""
 
     __tablename__ = "purchase_orders"
     __table_args__ = (
-        UniqueConstraint("po_number", name="uq_purchase_orders_po_number"),
+        UniqueConstraint("tenant_id", "po_number", name="uq_purchase_orders_tenant_po_number"),
         Index("ix_purchase_orders_po_number", "po_number"),
     )
 
@@ -139,7 +144,7 @@ class PurchaseOrder(Base):
     invoices: Mapped[list[Invoice]] = relationship(back_populates="purchase_order")
 
 
-class PurchaseOrderLine(Base):
+class PurchaseOrderLine(TenantScoped, Base):
     """Purchase order line item."""
 
     __tablename__ = "purchase_order_lines"
@@ -176,12 +181,12 @@ class PurchaseOrderLine(Base):
     invoice_lines: Mapped[list[InvoiceLine]] = relationship(back_populates="purchase_order_line")
 
 
-class GoodsReceipt(Base):
+class GoodsReceipt(TenantScoped, Base):
     """Goods receipt note (GRN) header."""
 
     __tablename__ = "goods_receipts"
     __table_args__ = (
-        UniqueConstraint("grn_number", name="uq_goods_receipts_grn_number"),
+        UniqueConstraint("tenant_id", "grn_number", name="uq_goods_receipts_tenant_grn_number"),
         Index("ix_goods_receipts_grn_number", "grn_number"),
     )
 
@@ -218,7 +223,7 @@ class GoodsReceipt(Base):
     )
 
 
-class GoodsReceiptLine(Base):
+class GoodsReceiptLine(TenantScoped, Base):
     """Goods receipt line item."""
 
     __tablename__ = "goods_receipt_lines"
@@ -257,12 +262,12 @@ class GoodsReceiptLine(Base):
     )
 
 
-class Invoice(Base):
+class Invoice(TenantScoped, Base):
     """Vendor invoice header."""
 
     __tablename__ = "invoices"
     __table_args__ = (
-        UniqueConstraint("invoice_number", name="uq_invoices_invoice_number"),
+        UniqueConstraint("tenant_id", "invoice_number", name="uq_invoices_tenant_invoice_number"),
         Index("ix_invoices_invoice_number", "invoice_number"),
     )
 
@@ -310,7 +315,7 @@ class Invoice(Base):
     )
 
 
-class InvoiceLine(Base):
+class InvoiceLine(TenantScoped, Base):
     """Vendor invoice line item."""
 
     __tablename__ = "invoice_lines"
@@ -348,7 +353,7 @@ class InvoiceLine(Base):
     )
 
 
-class ReconciliationException(Base):
+class ReconciliationException(TenantScoped, Base):
     """Exception raised by deterministic reconciliation, with preserved evidence."""
 
     __tablename__ = "reconciliation_exceptions"
@@ -406,7 +411,7 @@ class ReconciliationException(Base):
     invoice: Mapped[Invoice | None] = relationship()
 
 
-class Document(Base):
+class Document(TenantScoped, Base):
     """Uploaded file metadata. Binary content lives on the filesystem."""
 
     __tablename__ = "documents"
@@ -414,7 +419,7 @@ class Document(Base):
         Index("ix_documents_sha256", "sha256"),
         Index("ix_documents_document_type", "document_type"),
         Index("ix_documents_status", "status"),
-        UniqueConstraint("sha256", name="uq_documents_sha256"),
+        UniqueConstraint("tenant_id", "sha256", name="uq_documents_tenant_sha256"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -482,7 +487,7 @@ class Document(Base):
     review_tasks: Mapped[list[ReviewTask]] = relationship(back_populates="document")
 
 
-class DocumentExtractionResult(Base):
+class DocumentExtractionResult(TenantScoped, Base):
     """Persisted M4 understanding output — not authoritative financial truth.
 
     Structured candidates and evidence live in JSON so M4 can evolve without
@@ -537,7 +542,7 @@ class DocumentExtractionResult(Base):
     )
 
 
-class LlmExtractionResult(Base):
+class LlmExtractionResult(TenantScoped, Base):
     """Persisted M6 Gemini-assisted extraction — never overwrites M4.
 
     Gemini candidates are untrusted. Authoritative writes still require M5
@@ -599,7 +604,7 @@ class LlmExtractionResult(Base):
     )
 
 
-class ReviewTask(Base):
+class ReviewTask(TenantScoped, Base):
     """Human review queue item for an untrusted M4 extraction candidate.
 
     One active task per extraction result. Original extraction rows are never
@@ -679,7 +684,7 @@ class ReviewTask(Base):
     )
 
 
-class ReviewDecision(Base):
+class ReviewDecision(TenantScoped, Base):
     """Immutable audit record of a human review action."""
 
     __tablename__ = "review_decisions"
@@ -711,12 +716,12 @@ class ReviewDecision(Base):
     review_task: Mapped[ReviewTask] = relationship(back_populates="decisions")
 
 
-class PolicyDocument(Base):
+class PolicyDocument(TenantScoped, Base):
     """Logical policy identity in the M7 knowledge base (not procurement data)."""
 
     __tablename__ = "policy_documents"
     __table_args__ = (
-        UniqueConstraint("name", name="uq_policy_documents_name"),
+        UniqueConstraint("tenant_id", "name", name="uq_policy_documents_tenant_name"),
         Index("ix_policy_documents_name", "name"),
     )
 
@@ -742,7 +747,7 @@ class PolicyDocument(Base):
     )
 
 
-class PolicyVersion(Base):
+class PolicyVersion(TenantScoped, Base):
     """A specific version of a policy document with provenance metadata."""
 
     __tablename__ = "policy_versions"
@@ -795,7 +800,7 @@ class PolicyVersion(Base):
     )
 
 
-class PolicyChunk(Base):
+class PolicyChunk(TenantScoped, Base):
     """Retrievable policy section with citation provenance.
 
     ``content`` is the source of truth. ``embedding`` is derived data and may be
@@ -850,7 +855,7 @@ class PolicyChunk(Base):
     policy_version: Mapped[PolicyVersion] = relationship(back_populates="chunks")
 
 
-class PolicyGroundingResult(Base):
+class PolicyGroundingResult(TenantScoped, Base):
     """AI-derived policy explanation audit row (M7.4).
 
     Never authoritative financial truth. Does not overwrite reconciliation exceptions.
@@ -889,7 +894,7 @@ class PolicyGroundingResult(Base):
     )
 
 
-class ResolutionPlan(Base):
+class ResolutionPlan(TenantScoped, Base):
     """Agent-proposed resolution plan for a reconciliation exception (M8).
 
     Plans never mutate financial records. They only orchestrate validated
@@ -900,7 +905,9 @@ class ResolutionPlan(Base):
     __table_args__ = (
         Index("ix_resolution_plans_exception_id", "reconciliation_exception_id"),
         Index("ix_resolution_plans_status", "status"),
-        UniqueConstraint("planning_key", name="uq_resolution_plans_planning_key"),
+        UniqueConstraint(
+            "tenant_id", "planning_key", name="uq_resolution_plans_tenant_planning_key"
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -953,7 +960,7 @@ class ResolutionPlan(Base):
     )
 
 
-class ResolutionPlanningAttempt(Base):
+class ResolutionPlanningAttempt(TenantScoped, Base):
     """Audit row for an M8.3 AI planning attempt (success or failure).
 
     Failed attempts must not leave ProposedAction rows. Successful attempts
@@ -1004,7 +1011,7 @@ class ResolutionPlanningAttempt(Base):
     )
 
 
-class ProposedAction(Base):
+class ProposedAction(TenantScoped, Base):
     """One concrete workflow action within a ResolutionPlan."""
 
     __tablename__ = "proposed_actions"
@@ -1061,7 +1068,7 @@ class ProposedAction(Base):
     )
 
 
-class ActionApproval(Base):
+class ActionApproval(TenantScoped, Base):
     """Immutable human authorization decision for a ProposedAction.
 
     Historical decisions are never overwritten — append a new row instead.
@@ -1101,7 +1108,7 @@ class ActionApproval(Base):
     proposed_action: Mapped[ProposedAction] = relationship(back_populates="approvals")
 
 
-class ActionExecution(Base):
+class ActionExecution(TenantScoped, Base):
     """Execution attempt/result for a ProposedAction.
 
     ``idempotency_key`` is unique so retries cannot create duplicate executions.
@@ -1109,7 +1116,9 @@ class ActionExecution(Base):
 
     __tablename__ = "action_executions"
     __table_args__ = (
-        UniqueConstraint("idempotency_key", name="uq_action_executions_idempotency_key"),
+        UniqueConstraint(
+            "idempotency_key", name="uq_action_executions_idempotency_key"
+        ),
         Index("ix_action_executions_proposed_action_id", "proposed_action_id"),
         Index("ix_action_executions_status", "execution_status"),
     )
@@ -1140,7 +1149,7 @@ class ActionExecution(Base):
     proposed_action: Mapped[ProposedAction] = relationship(back_populates="executions")
 
 
-class ResolutionAuditEvent(Base):
+class ResolutionAuditEvent(TenantScoped, Base):
     """Append-only resolution lifecycle audit event (M8.6).
 
     Rows are never updated or deleted by application services.
@@ -1182,7 +1191,7 @@ class ResolutionAuditEvent(Base):
     )
 
 
-class AnomalySignalRecord(Base):
+class AnomalySignalRecord(TenantScoped, Base):
     """Persisted deterministic anomaly signal (M9.1).
 
     Signals are explainable risk indicators — not fraud determinations.
@@ -1191,7 +1200,7 @@ class AnomalySignalRecord(Base):
 
     __tablename__ = "anomaly_signals"
     __table_args__ = (
-        UniqueConstraint("fingerprint", name="uq_anomaly_signals_fingerprint"),
+        UniqueConstraint("tenant_id", "fingerprint", name="uq_anomaly_signals_tenant_fingerprint"),
         Index("ix_anomaly_signals_vendor_id", "vendor_id"),
         Index("ix_anomaly_signals_invoice_id", "invoice_id"),
         Index("ix_anomaly_signals_purchase_order_id", "purchase_order_id"),
@@ -1241,7 +1250,7 @@ class AnomalySignalRecord(Base):
     )
 
 
-class AnomalyScanJob(Base):
+class AnomalyScanJob(TenantScoped, Base):
     """Bounded, resumable anomaly batch scan job (M9.2).
 
     Checkpoint stores the last successfully processed entity cursor.
@@ -1254,9 +1263,10 @@ class AnomalyScanJob(Base):
         Index("ix_anomaly_scan_jobs_scan_type", "scan_type"),
         Index("ix_anomaly_scan_jobs_requested_at", "requested_at"),
         UniqueConstraint(
+            "tenant_id",
             "scan_type",
             "scan_key",
-            name="uq_anomaly_scan_jobs_type_key",
+            name="uq_anomaly_scan_jobs_tenant_type_key",
         ),
     )
 
@@ -1292,7 +1302,7 @@ class AnomalyScanJob(Base):
     )
 
 
-class RiskProfileRecord(Base):
+class RiskProfileRecord(TenantScoped, Base):
     """Immutable persisted risk profile (M9.3).
 
     Deterministic aggregation of anomaly signals — not a fraud determination.
@@ -1301,13 +1311,14 @@ class RiskProfileRecord(Base):
 
     __tablename__ = "risk_profiles"
     __table_args__ = (
-        UniqueConstraint("fingerprint", name="uq_risk_profiles_fingerprint"),
+        UniqueConstraint("tenant_id", "fingerprint", name="uq_risk_profiles_tenant_fingerprint"),
         UniqueConstraint(
+            "tenant_id",
             "entity_type",
             "entity_id",
             "score_version",
             "as_of",
-            name="uq_risk_profiles_entity_version_as_of",
+            name="uq_risk_profiles_tenant_entity_version_as_of",
         ),
         Index("ix_risk_profiles_entity", "entity_type", "entity_id"),
         Index("ix_risk_profiles_score_version", "score_version"),
@@ -1333,7 +1344,7 @@ class RiskProfileRecord(Base):
     )
 
 
-class ExceptionReviewRoute(Base):
+class ExceptionReviewRoute(TenantScoped, Base):
     """Exception-scoped human-review routing record (M8.2 ROUTE_TO_REVIEW).
 
     Distinct from M5 ``ReviewTask`` (which requires document + extraction).
@@ -1388,7 +1399,7 @@ class ExceptionReviewRoute(Base):
     )
 
 
-class VendorClarificationRequest(Base):
+class VendorClarificationRequest(TenantScoped, Base):
     """Durable vendor clarification request (no email/external send in M8.2)."""
 
     __tablename__ = "vendor_clarification_requests"
@@ -1444,7 +1455,7 @@ class VendorClarificationRequest(Base):
     )
 
 
-class MissingDocumentRequest(Base):
+class MissingDocumentRequest(TenantScoped, Base):
     """Durable missing-document workflow request (no external contact in M8.2)."""
 
     __tablename__ = "missing_document_requests"
@@ -1495,7 +1506,7 @@ class MissingDocumentRequest(Base):
     )
 
 
-class ManagerEscalation(Base):
+class ManagerEscalation(TenantScoped, Base):
     """Durable manager escalation record (no notification send in M8.2)."""
 
     __tablename__ = "manager_escalations"
@@ -1543,6 +1554,122 @@ class ManagerEscalation(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+
+
+class Tenant(Base):
+    """Organization boundary. Business rows reference this id."""
+
+    __tablename__ = "tenants"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class User(Base):
+    """Login identity. Authority comes from membership, not from this row alone."""
+
+    __tablename__ = "users"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    email: Mapped[str] = mapped_column(String(320), nullable=False, unique=True)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class Membership(Base):
+    """One user's role inside one tenant."""
+
+    __tablename__ = "memberships"
+    __table_args__ = (UniqueConstraint("user_id", "tenant_id", name="uq_memberships_user_tenant"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), nullable=False)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("tenants.id"), nullable=False)
+    role: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class UserSession(Base):
+    """Server-side session. The cookie stores only an unguessable token."""
+
+    __tablename__ = "user_sessions"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), nullable=False)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("tenants.id"), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    csrf_token: Mapped[str] = mapped_column(String(64), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class LoginAttempt(Base):
+    """Failed login counter. Stores a hash of the email, not the password."""
+
+    __tablename__ = "login_attempts"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    email_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class ProcessingJob(TenantScoped, Base):
+    """Durable background work. A queued row is the only acceptance signal."""
+
+    __tablename__ = "processing_jobs"
+    __table_args__ = (
+        Index("ix_processing_jobs_claim", "status", "run_after"),
+        Index("ix_processing_jobs_resource", "resource_type", "resource_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    job_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    resource_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    resource_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(160), nullable=False)
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    run_after: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    leased_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    leased_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    error_category: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(String(180), nullable=True)
+    correlation_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class WorkerHeartbeat(Base):
+    """Last successful queue poll for one worker process."""
+
+    __tablename__ = "worker_heartbeats"
+
+    worker_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    last_poll_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+install_tenant_filter()
 
 
 # Re-export enum names for callers that want ORM + domain enums together.

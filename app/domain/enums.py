@@ -287,3 +287,27 @@ class ExceptionReviewRouteStatus(StrEnum):
     IN_REVIEW = "IN_REVIEW"
     COMPLETED = "COMPLETED"
     CANCELLED = "CANCELLED"
+
+
+class MembershipRole(StrEnum):
+    """Least privilege increases from viewer to admin."""
+
+    VIEWER = "viewer"
+    OPERATOR = "operator"
+    REVIEWER = "reviewer"
+    APPROVER = "approver"
+    ADMIN = "admin"
+
+
+class JobStatus(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    RETRY_SCHEDULED = "retry_scheduled"
+    CANCELLED = "cancelled"
+
+
+class JobType(StrEnum):
+    DOCUMENT_UNDERSTAND = "document_understand"
+    LLM_UNDERSTAND = "llm_understand"

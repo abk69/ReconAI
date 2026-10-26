@@ -462,17 +462,18 @@ Classification and field extraction are rule-based and testable. Ambiguous docum
 ```bash
 POST /documents/{id}/understand
 GET  /documents/{id}/understanding
+GET  /jobs/{id}
 ```
 
-Responses never expose filesystem storage paths.
+`POST /documents/{id}/understand` persists a background job and returns HTTP 202. It does not call a model or promote records. A separate worker (`python -m app.workers`) performs the extraction. `GET /documents/{id}/understanding` reads the stored result only. Responses never expose filesystem storage paths.
 
 ## Single-operator profile
 
-ReconAI v1.0 is a single-operator portfolio and demo system. Authentication is intentionally not implemented. Passing CI does not make the system production ready for shared organizational data. This profile is production-profile hardened for the single-operator portfolio/demo deployment.
+ReconAI v1.5 adds server-side sessions, roles, tenant-scoped reads, and a database-backed document job queue. Passing CI does not make the system production ready for shared organizational data. The environment profile remains hardened for local, demo, and production configuration checks. See [`docs/M15_PLATFORM.md`](docs/M15_PLATFORM.md) for bootstrap, roles, and the required legacy-data assignment.
 
 `APP_ENV=local` allows debug and the Compose database account (`reconai` / the local default password). `APP_ENV=demo` and `APP_ENV=production` force debug off when it was not explicitly enabled, refuse an explicit debug flag, and refuse that known local database account. Other passwords are accepted. `GEMINI_API_KEY` stays optional. Deterministic reconciliation, review, and evaluation run without it.
 
-`GET /health` is liveness only. It does not touch the database. `GET /ready` runs `SELECT 1` through the application database session. Success is `{"status": "ready"}`. Failure is HTTP 503 `{"status": "not_ready"}` with no connection string or exception text.
+`GET /health` is API liveness only. It does not touch the database. `GET /ready` runs `SELECT 1` through the application database session. Success is `{"status": "ready"}`. Failure is HTTP 503 `{"status": "not_ready"}` with no connection string or exception text. `GET /health/worker` reads the worker poll timestamp. The worker writes that timestamp every 5 seconds, including while idle. A poll within 20 seconds is `healthy`. An older poll is HTTP 503 `stale`, and no poll is HTTP 503 `unavailable`.
 
 ```bash
 # Local
@@ -499,7 +500,7 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 In another shell: `cd frontend && npm install && npm run dev`, then open `http://localhost:3000`.
 
-`GET /health` is liveness. `GET /ready` checks the database. Gemini is optional and stays in the backend `.env`.
+`GET /health` is API liveness. `GET /ready` checks the database. `GET /health/worker` is the 5-second poll and 20-second stale check. Gemini is optional and stays in the backend `.env`.
 
 Public document responses omit `storage_path`. Responses carry `X-Request-ID` for correlation only. Unexpected errors return a short message plus that id. Details are in [`docs/M12_PRODUCTION_HARDENING.md`](docs/M12_PRODUCTION_HARDENING.md).
 
@@ -526,4 +527,4 @@ pytest -q -o addopts= -m postgres
 - Extraction: open the document, read stored outcome, validation issues, and evidence. `EXTRACTION_FAILED` can be retried. `VALIDATION_FAILED` and `REVIEW_REQUIRED` need a human correction, not guessed identifiers.
 - Reconciliation: run it from a promoted invoice. `MATCHED` is stored on that invoice. `EXCEPTIONS_FOUND` creates exception rows with evidence. PO and GRN rows do not inherit the last invoice's match status. A document with no persisted run is not matched.
 
-This is a single-operator portfolio demo. It is not multi-user production: there is no authentication, tenancy, worker queue, or cloud object store.
+Sign-in, tenant boundaries, and the document worker are described in [`docs/M15_PLATFORM.md`](docs/M15_PLATFORM.md). There is no cloud object store. A user has one membership, and rows created before tenants stay hidden until an operator assigns them.

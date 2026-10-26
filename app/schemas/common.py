@@ -1,5 +1,7 @@
 """Shared API response schemas."""
 
+from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict
 
 
@@ -18,3 +20,12 @@ class ReadinessResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     status: str
+
+
+class WorkerHealthResponse(BaseModel):
+    """Worker poll health. A stopped worker is stale or unavailable, not healthy."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: str
+    last_poll_at: datetime | None = None

@@ -81,7 +81,7 @@ Windows, when the virtualenv is `.venv`:
 .\.venv\Scripts\python.exe -m alembic upgrade head
 ```
 
-The current head is `0018_risk_profiles`. The application does not migrate itself on startup.
+The current head is `0020_worker_heartbeats`. The application does not migrate itself on startup. Existing rows are not assigned to a tenant by the migration. See [`M15_PLATFORM.md`](M15_PLATFORM.md) before serving the API to more than one person.
 
 ## Backend startup
 
@@ -117,8 +117,9 @@ Leave `GEMINI_API_KEY` empty to use reconciliation, review, documents, anomalies
 
 | Endpoint | Meaning |
 | --- | --- |
-| `GET /health` | Process is up. Does not touch the database. `{"status":"ok","service":"reconai"}` |
+| `GET /health` | API process is up. Does not touch the database. `{"status":"ok","service":"reconai"}` |
 | `GET /ready` | Database answered `SELECT 1`. `{"status":"ready"}` or HTTP 503 `{"status":"not_ready"}` |
+| `GET /health/worker` | Newest worker poll. The worker writes a timestamp every 5 seconds, including while idle. `healthy` means that poll is within 20 seconds. Older is HTTP 503 `stale`. No poll is HTTP 503 `unavailable`. |
 | `GET /dashboard/summary` | Read-only counts. Empty after a fresh migration |
 
 PowerShell:
@@ -137,7 +138,7 @@ curl -s http://127.0.0.1:8000/ready
 curl -s http://127.0.0.1:8000/dashboard/summary
 ```
 
-Stop the API and `GET /health` fails. That is the unavailable check. Start it again and both health and readiness should succeed after migrations.
+Stop the API and `GET /health` fails. That is the API unavailable check. Start it again and both health and readiness should succeed after migrations. A worker that has never polled leaves `GET /health/worker` at `unavailable`. A worker that stops polling becomes `stale` after 20 seconds and is not reported as healthy.
 
 ## Demo workflow
 

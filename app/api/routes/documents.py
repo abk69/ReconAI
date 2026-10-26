@@ -7,9 +7,11 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
+from app.api.routes.jobs import JobResponse, enqueue_document_job
 from app.core.config import get_settings
+from app.db.models import Document
 from app.db.session import get_db
-from app.domain.enums import DocumentStatus, DocumentType, ExtractionOutcome, ReviewStatus
+from app.domain.enums import DocumentStatus, DocumentType, ExtractionOutcome, JobType, ReviewStatus
 from app.schemas.documents import (
     DocumentListItem,
     DocumentListResponse,
@@ -243,27 +245,16 @@ def update_document(
     return _to_response(row)
 
 
-@router.post("/{document_id}/understand", response_model=UnderstandingResponse)
-def understand_document(document_id: UUID, session: DbSession) -> UnderstandingResponse:
-    """Run deterministic document understanding (M4). Does not call LLMs."""
-    settings = get_settings()
-    service = DocumentUnderstandingService(session, storage=LocalFileStorage(settings.storage_root))
-    try:
-        result = service.understand(document_id)
-    except DocumentUnderstandingNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    return UnderstandingResponse(
-        document_id=result.document_id,
-        detected_type=result.detected_type,
-        outcome=result.outcome,
-        document_status=result.document_status,
-        message=result.message,
-        candidate=result.candidate,
-        validation=result.validation,
-        evidence=result.evidence,
-        extractor_version=result.extractor_version,
-        has_raw_extraction=bool(result.raw_extraction),
-    )
+@router.post(
+    "/{document_id}/understand",
+    response_model=JobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def understand_document(document_id: UUID, session: DbSession) -> JobResponse:
+    """Queue deterministic understanding. The response means the job was stored."""
+    if session.get(Document, document_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+    return enqueue_document_job(session, document_id, JobType.DOCUMENT_UNDERSTAND)
 
 
 @router.get("/{document_id}/raw-extraction", response_model=RawExtractionResponse)
@@ -336,21 +327,16 @@ def _llm_to_response(
     )
 
 
-@router.post("/{document_id}/llm-understand", response_model=LlmUnderstandingResponse)
-def llm_understand_document(document_id: UUID, session: DbSession) -> LlmUnderstandingResponse:
-    """Run gated Gemini assistance (M6). Never writes authoritative financial rows."""
-    from app.db.models import Document
-
-    service = LlmUnderstandingService(session)
-    try:
-        row = service.understand(document_id)
-    except LlmUnderstandingNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    document = session.get(Document, document_id)
-    return _llm_to_response(
-        row,
-        document_status=document.status if document is not None else None,
-    )
+@router.post(
+    "/{document_id}/llm-understand",
+    response_model=JobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def llm_understand_document(document_id: UUID, session: DbSession) -> JobResponse:
+    """Queue Gemini assistance. Opening or reading a document does not call Gemini."""
+    if session.get(Document, document_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+    return enqueue_document_job(session, document_id, JobType.LLM_UNDERSTAND)
 
 
 @router.get("/{document_id}/llm-understanding", response_model=LlmUnderstandingResponse)

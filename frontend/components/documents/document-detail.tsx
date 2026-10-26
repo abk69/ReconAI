@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { DocumentActions } from "@/components/documents/document-actions";
 import { Lifecycle, buildLifecycle } from "@/components/documents/lifecycle";
@@ -9,7 +9,7 @@ import { FlowRail } from "@/components/ui/flow-rail";
 import { RecordState } from "@/components/procurement/record-state";
 import { loadAside, resourceError, useResource } from "@/components/procurement/use-resource";
 import { DataTable } from "@/components/ui/data-table";
-import { getLlmUnderstanding, getRawExtraction, getUnderstanding, understandDocument } from "@/lib/api/documents";
+import { getLlmUnderstanding, getProcessingJob, getRawExtraction, getUnderstanding, retryProcessingJob, understandDocument, type ProcessingJob } from "@/lib/api/documents";
 import { getDocument, getInvoice, getVendor, listExceptions, listGoodsReceipts, listInvoices, listPurchaseOrders, runReconciliation, type ReconciliationRun } from "@/lib/api/procurement";
 import { listReviewTasks, requestReview } from "@/lib/api/workflow";
 import { invoiceStatusWords, relatedInvoiceSummary } from "@/lib/documents/next-action";
@@ -243,6 +243,24 @@ export function DocumentIntelligencePage({ id }: { id: string }) {
   const busyRef = useRef(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [run, setRun] = useState<ReconciliationRun | null>(null);
+  const [job, setJob] = useState<ProcessingJob | null>(null);
+  useEffect(() => {
+    if (!job || !["queued", "running", "retry_scheduled"].includes(job.status)) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      void getProcessingJob(job.id)
+        .then((next) => {
+          setJob(next);
+          if (next.status === "succeeded" || next.status === "failed" || next.status === "cancelled") {
+            setRevision((value) => value + 1);
+          }
+        })
+        .catch(() => undefined);
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [job]);
+
   const state = useResource(
     `${id}:${revision}`,
     async (signal) => {
@@ -394,7 +412,12 @@ export function DocumentIntelligencePage({ id }: { id: string }) {
                 relatedInvoiceSummary={invoiceSummary}
                 ambiguitySummary={ambiguitySummary || null}
                 exceptionHref={exceptionHref}
-                onUnderstand={() => runAction("understand", () => understandDocument(document.id))}
+                onUnderstand={() =>
+                  runAction("understand", async () => {
+                    const queued = await understandDocument(document.id);
+                    setJob(queued);
+                  })
+                }
                 onRequestReview={() => runAction("review", () => requestReview(document.id))}
                 onReconcile={() =>
                   runAction("reconcile", async () => {
@@ -405,6 +428,25 @@ export function DocumentIntelligencePage({ id }: { id: string }) {
                   })
                 }
               />
+              {job ? (
+                <p className="text-sm leading-6" role="status">
+                  Document processing is {job.status.replaceAll("_", " ")}.
+                  {job.error_message ? ` ${job.error_message}` : ""}
+                  {job.status === "failed" ? (
+                    <button
+                      type="button"
+                      className="ml-2 text-brand underline"
+                      onClick={() =>
+                        runAction("understand", async () => {
+                          setJob(await retryProcessingJob(job.id));
+                        })
+                      }
+                    >
+                      Retry
+                    </button>
+                  ) : null}
+                </p>
+              ) : null}
 
               {ambiguousIssues.length > 0 ? (
                 <section className="space-y-2">

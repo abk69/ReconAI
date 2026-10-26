@@ -15,12 +15,16 @@ from app.core.request_context import (
     resolve_request_id,
     set_request_id,
 )
+from app.db.session import get_session_factory
+from app.db.tenant_filter import reset_tenant_id, set_tenant_id
+from app.identity.service import SESSION_COOKIE, AuthService
 
 
 class RequestContextMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:  # type: ignore[no-untyped-def]
         request_id = resolve_request_id(request.headers.get(REQUEST_ID_HEADER))
         token = set_request_id(request_id)
+        tenant_token = _bind_tenant(request)
         started = perf_counter()
         try:
             try:
@@ -40,4 +44,26 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
             )
             return response
         finally:
+            if tenant_token is not None:
+                reset_tenant_id(tenant_token)
             reset_request_id(token)
+
+
+def _bind_tenant(request: Request):
+    """Bind the session tenant before endpoint threads are started.
+
+    A sync dependency runs in a different worker thread from the endpoint, so
+    a ContextVar set only inside that dependency is not visible to queries.
+    """
+    raw = request.cookies.get(SESSION_COOKIE)
+    if not raw:
+        return None
+    session = get_session_factory()()
+    try:
+        principal = AuthService(session).principal_for_token(raw)
+    finally:
+        session.close()
+    if principal is None:
+        return None
+    request.state.principal = principal
+    return set_tenant_id(principal.tenant_id)

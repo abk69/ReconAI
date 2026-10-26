@@ -1,6 +1,6 @@
 """FastAPI application entrypoint."""
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.exception_handlers import (
     http_exception_handler,
     request_validation_exception_handler,
@@ -11,14 +11,17 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import Response
 
+from app.api.deps import require_access
 from app.api.middleware import RequestContextMiddleware
 from app.api.routes import (
     anomalies,
+    auth,
     dashboard,
     documents,
     goods_receipts,
     health,
     invoices,
+    jobs,
     policies,
     purchase_orders,
     reconciliation,
@@ -41,7 +44,7 @@ def create_app() -> FastAPI:
             "Intelligent procurement reconciliation and exception-resolution platform. "
             "Deterministic reconciliation establishes financial facts; AI assists later."
         ),
-        version="0.1.0",
+        version="1.5.0",
         debug=settings.debug,
     )
     prefix = settings.api_prefix
@@ -50,9 +53,9 @@ def create_app() -> FastAPI:
         application.add_middleware(
             CORSMiddleware,
             allow_origins=origins,
-            allow_credentials=False,
+            allow_credentials=True,
             allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-            allow_headers=["Authorization", "Content-Type", REQUEST_ID_HEADER],
+            allow_headers=["Authorization", "Content-Type", "X-CSRF-Token", REQUEST_ID_HEADER],
             expose_headers=[REQUEST_ID_HEADER],
         )
     application.add_middleware(RequestContextMiddleware)
@@ -71,19 +74,26 @@ def create_app() -> FastAPI:
                 "request_id": current_request_id() or "-",
             },
         )
+
+    guard = [Depends(require_access)]
     application.include_router(health.router, prefix=prefix)
-    application.include_router(dashboard.router, prefix=prefix)
-    application.include_router(reconciliation.router, prefix=prefix)
-    application.include_router(documents.router, prefix=prefix)
-    application.include_router(review.router, prefix=prefix)
-    application.include_router(policies.router, prefix=prefix)
-    application.include_router(resolution.router, prefix=prefix)
-    application.include_router(anomalies.router, prefix=prefix)
-    application.include_router(risk.router, prefix=prefix)
-    application.include_router(vendors.router, prefix=prefix)
-    application.include_router(purchase_orders.router, prefix=prefix)
-    application.include_router(goods_receipts.router, prefix=prefix)
-    application.include_router(invoices.router, prefix=prefix)
+    application.include_router(auth.router, prefix=prefix)
+    for module in (
+        dashboard,
+        reconciliation,
+        documents,
+        review,
+        policies,
+        resolution,
+        anomalies,
+        risk,
+        vendors,
+        purchase_orders,
+        goods_receipts,
+        invoices,
+        jobs,
+    ):
+        application.include_router(module.router, prefix=prefix, dependencies=guard)
     return application
 
 

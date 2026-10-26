@@ -188,6 +188,7 @@ class ResolutionExecutionService:
             proposed_action_id=action.id,
             execution_status=ExecutionStatus.PENDING.value,
             idempotency_key=key,
+            tenant_id=plan.tenant_id,
         )
         try:
             with self._session.begin_nested():

@@ -21,9 +21,11 @@ from app.db.models import (
     PurchaseOrder,
     PurchaseOrderLine,
     ReconciliationException,
+    Tenant,
     Vendor,
 )
 from app.db.session import get_engine, get_session_factory
+from app.db.tenant_filter import reset_tenant_id, set_tenant_id
 from app.domain.enums import (
     ExceptionSeverity,
     ExceptionStatus,
@@ -442,6 +444,7 @@ def test_alembic_migration_creates_schema(migrated_engine: Engine) -> None:
         "policy_chunks",
         "policy_grounding_results",
         "alembic_version",
+        "worker_heartbeats",
     }
     tables = set(inspect(migrated_engine).get_table_names())
     assert expected_tables.issubset(tables)
@@ -450,10 +453,17 @@ def test_alembic_migration_creates_schema(migrated_engine: Engine) -> None:
 
     factory = sessionmaker(bind=migrated_engine, expire_on_commit=False)
     session = factory()
+    token = None
     try:
+        tenant = Tenant(name="Migrated")
+        session.add(tenant)
+        session.flush()
+        token = set_tenant_id(tenant.id)
         vendor = Vendor(name="Migrated Vendor", tax_id="TAX-MIG-1")
         session.add(vendor)
         session.commit()
         assert session.get(Vendor, vendor.id) is not None
     finally:
+        if token is not None:
+            reset_tenant_id(token)
         session.close()

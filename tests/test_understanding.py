@@ -482,14 +482,13 @@ def test_api_understand_and_get(db_session: Session, storage_root: Path) -> None
         assert upload.status_code == 201
         doc_id = upload.json()["id"]
         understand = client.post(f"/documents/{doc_id}/understand")
-        assert understand.status_code == 200
+        assert understand.status_code == 202
         body = understand.json()
-        assert body["outcome"] in {
-            "READY_FOR_RECONCILIATION",
-            "VALIDATION_FAILED",
-            "REVIEW_REQUIRED",
-        }
-        assert "storage_path" not in body
+        assert body["status"] == "queued"
+        assert body["resource_id"] == doc_id
+        from app.workers.runner import run_available
+
+        assert run_available(db_session, worker_id="test") == 1
         fetched = client.get(f"/documents/{doc_id}/understanding")
         assert fetched.status_code == 200
         assert fetched.json()["document_id"] == doc_id

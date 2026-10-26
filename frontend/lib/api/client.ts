@@ -10,6 +10,15 @@ type RequestOptions = {
   timeoutMs?: number;
 };
 
+function readCookie(name: string): string | null {
+  if (typeof document === "undefined") {
+    return null;
+  }
+  const prefix = `${name}=`;
+  const match = document.cookie.split("; ").find((item) => item.startsWith(prefix));
+  return match ? decodeURIComponent(match.slice(prefix.length)) : null;
+}
+
 function joinUrl(path: string): string {
   const normalized = path.startsWith("/") ? path : `/${path}`;
   return `${apiConfig.baseUrl}${normalized}`;
@@ -59,6 +68,12 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   try {
     const headers: Record<string, string> = {};
     let body: BodyInit | undefined;
+    if (method !== "GET") {
+      const csrf = readCookie("reconai_csrf");
+      if (csrf) {
+        headers["X-CSRF-Token"] = csrf;
+      }
+    }
     if (options.formData) {
       // Leave Content-Type unset so the browser supplies the multipart boundary.
       body = options.formData;
@@ -66,13 +81,12 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
       headers["Content-Type"] = "application/json";
       body = JSON.stringify(options.body);
     }
-    // Authentication is not implemented. A future session may set Authorization here.
-    // Do not read secrets from NEXT_PUBLIC_* variables.
 
     const response = await fetch(joinUrl(path), {
       method,
       headers: Object.keys(headers).length > 0 ? headers : undefined,
       body,
+      credentials: "include",
       signal: controller.signal,
     });
 

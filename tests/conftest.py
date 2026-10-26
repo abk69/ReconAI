@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Generator
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 from alembic import command
@@ -21,8 +22,40 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.api.deps import get_principal
 from app.db import models as _models  # noqa: F401 — register mappers
 from app.db.base import Base
+from app.db.models import Tenant
+from app.db.tenant_filter import reset_tenant_id, set_tenant_id
+from app.domain.enums import MembershipRole
+from app.identity.service import Principal
+from app.main import app
+
+TEST_TENANT_ID = UUID("00000000-0000-4000-8000-000000000001")
+TEST_USER_ID = UUID("00000000-0000-4000-8000-000000000002")
+
+
+def test_admin_principal() -> Principal:
+    return Principal(
+        user_id=TEST_USER_ID,
+        tenant_id=TEST_TENANT_ID,
+        role=MembershipRole.ADMIN.value,
+        email="test-admin@example.com",
+        csrf_token="test-csrf",
+    )
+
+
+@pytest.fixture(autouse=True)
+def _default_principal() -> Generator[None, None, None]:
+    """Existing API tests keep working as the isolated test tenant's admin."""
+
+    def _override() -> Principal:
+        set_tenant_id(TEST_TENANT_ID)
+        return test_admin_principal()
+
+    app.dependency_overrides[get_principal] = _override
+    yield
+    app.dependency_overrides.pop(get_principal, None)
 
 
 def _enable_sqlite_foreign_keys(dbapi_connection: object, _connection_record: object) -> None:
@@ -48,9 +81,18 @@ def sqlite_engine() -> Generator[Engine, None, None]:
 
 @pytest.fixture
 def db_session(sqlite_engine: Engine) -> Generator[Session, None, None]:
-    """Yield a transactional session bound to the isolated test engine."""
+    """Yield a transactional session bound to the isolated test tenant."""
     factory = sessionmaker(bind=sqlite_engine, autoflush=False, expire_on_commit=False)
+    # Cookie requests bind the tenant in middleware. Point that lookup at the
+    # test database instead of the process-wide application engine.
+    from app.api import middleware
+
+    original_factory = middleware.get_session_factory
+    middleware.get_session_factory = lambda: factory  # type: ignore[method-assign]
     session = factory()
+    token = set_tenant_id(TEST_TENANT_ID)
+    session.add(Tenant(id=TEST_TENANT_ID, name="Test tenant"))
+    session.commit()
     try:
         yield session
         session.commit()
@@ -58,6 +100,8 @@ def db_session(sqlite_engine: Engine) -> Generator[Session, None, None]:
         session.rollback()
         raise
     finally:
+        middleware.get_session_factory = original_factory  # type: ignore[method-assign]
+        reset_tenant_id(token)
         session.close()
 
 
